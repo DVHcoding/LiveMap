@@ -1,0 +1,15 @@
+{
+  "name": "simulator",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "mqtt": "^5.16.0"
+  }
+}
