@@ -19,15 +19,18 @@ class OrientationSensorHelper(context: Context) : SensorEventListener {
 
     private val rotationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
+    private var lastFilteredAzimuth = -1f
 
     fun startListening() {
         rotationVectorSensor?.let { sensor ->
-            sensorManager?.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+            // SENSOR_DELAY_UI để giảm tải CPU và loại bỏ nhiễu tần số cao của GAME delay
+            sensorManager?.registerListener(this, sensor, SensorManager.SENSOR_DELAY_UI)
         }
     }
 
     fun stopListening() {
         sensorManager?.unregisterListener(this)
+        lastFilteredAzimuth = -1f
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -40,7 +43,24 @@ class OrientationSensorHelper(context: Context) : SensorEventListener {
             if (azimuthDeg < 0) {
                 azimuthDeg += 360f
             }
-            _azimuthFlow.value = azimuthDeg
+
+            if (lastFilteredAzimuth < 0f) {
+                lastFilteredAzimuth = azimuthDeg
+                _azimuthFlow.value = azimuthDeg
+                return
+            }
+
+            // Tính độ chênh lệch góc theo vòng tròn 360 độ [-180, 180]
+            var diff = (azimuthDeg - lastFilteredAzimuth) % 360f
+            if (diff > 180f) diff -= 360f
+            if (diff < -180f) diff += 360f
+
+            // Khử rung tay và nhiễu cảm biến (Deadband 1.0 độ): nếu rung nhẹ thì giữ nguyên đèn pin
+            if (kotlin.math.abs(diff) < 1.0f) return
+
+            // Lọc thông thấp mượt mà (alpha = 0.35)
+            lastFilteredAzimuth = (lastFilteredAzimuth + diff * 0.35f + 360f) % 360f
+            _azimuthFlow.value = lastFilteredAzimuth
         }
     }
 
