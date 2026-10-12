@@ -24,6 +24,10 @@ class LiveMapApp : Application() {
             userAgentValue = "LiveMapApp/1.0.0 (Android; com.livemap.app; OpenStreetMap Tile Client)"
             osmdroidBasePath = osmBaseDir
             osmdroidTileCache = osmTilesDir
+            // Tăng bộ đệm RAM từ 9 tile lên 48 tile để cuộn và zoom mượt mà, không bị khựng tải lại
+            cacheMapTileCount = 48
+            tileDownloadThreads = 4
+            tileFileSystemThreads = 4
         }
     }
 }

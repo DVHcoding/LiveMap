@@ -141,6 +141,9 @@ fun OsmMapView(
                 userAgentValue = "LiveMapApp/1.0.0 (Android; com.livemap.app)"
                 osmdroidBasePath = osmBaseDir
                 osmdroidTileCache = osmTilesDir
+                cacheMapTileCount = 48
+                tileDownloadThreads = 4
+                tileFileSystemThreads = 4
             }
 
             val mapView = MapView(ctx).apply {
