@@ -68,6 +68,9 @@ class LiveLocationService : Service() {
                 action = ACTION_STOP
             }
             context.startService(intent)
+            try {
+                context.stopService(intent)
+            } catch (_: Exception) {}
         }
     }
 
@@ -102,17 +105,19 @@ class LiveLocationService : Service() {
             ACTION_STOP -> {
                 stopLocationSharing()
                 stopSelf()
+                return START_NOT_STICKY
             }
             ACTION_START -> {
                 startForegroundWithNotification()
                 initAndStartTracking()
+                return START_STICKY
             }
             else -> {
-                startForegroundWithNotification()
-                initAndStartTracking()
+                stopLocationSharing()
+                stopSelf()
+                return START_NOT_STICKY
             }
         }
-        return START_STICKY
     }
 
     private fun startForegroundWithNotification() {
@@ -152,6 +157,7 @@ class LiveLocationService : Service() {
     }
 
     private fun handleNewLocation(loc: android.location.Location) {
+        if (!_isServiceRunning.value) return
         val now = System.currentTimeMillis()
 
         // 1. Chỉ truy vấn trạng thái Pin hệ thống 30 giây một lần (tiết kiệm CPU)
@@ -238,15 +244,15 @@ class LiveLocationService : Service() {
     }
 
     private fun stopLocationSharing() {
-        MqttManager.publishOfflineStatus()
+        _isServiceRunning.value = false
         locationCallback?.let {
             fusedLocationClient.removeLocationUpdates(it)
             locationCallback = null
         }
+        MqttManager.publishOfflineStatus()
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }
-        _isServiceRunning.value = false
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
