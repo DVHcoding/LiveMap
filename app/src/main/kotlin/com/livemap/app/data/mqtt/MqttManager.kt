@@ -246,6 +246,17 @@ object MqttManager {
                 isCleanSession = true
                 connectionTimeout = 10
                 keepAliveInterval = 20
+
+                val willMsg = LocationData(
+                    senderId = currentMyUserId,
+                    senderName = "",
+                    latitude = 0.0,
+                    longitude = 0.0,
+                    status = "OFFLINE",
+                    deviceId = currentDeviceId,
+                    timestamp = System.currentTimeMillis()
+                )
+                setWill(getTopic(pairCode), gson.toJson(willMsg).toByteArray(), 1, false)
             }
 
             client?.connect(options, null, object : IMqttActionListener {
