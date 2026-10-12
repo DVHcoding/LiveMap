@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -200,15 +201,15 @@ fun OsmMapView(
         update = { _ -> }
     )
 
-    var lastPartnerTime by remember { mutableStateOf(0L) }
+    val lastPartnerTime = remember { longArrayOf(0L) }
     LaunchedEffect(partnerLocation, mapHolder) {
         val loc = partnerLocation ?: return@LaunchedEffect
         val holder = mapHolder ?: return@LaunchedEffect
         val now = System.currentTimeMillis()
-        val duration = if (lastPartnerTime > 0L) {
-            (now - lastPartnerTime).coerceIn(200L, 2500L)
+        val duration = if (lastPartnerTime[0] > 0L) {
+            (now - lastPartnerTime[0]).coerceIn(200L, 2500L)
         } else 1000L
-        lastPartnerTime = now
+        lastPartnerTime[0] = now
 
         holder.partnerMarker.title = "$partnerName (${String.format("%.1f", loc.speed * 3.6f)} km/h)"
         holder.partnerSmoothHelper.animateMarkerTo(
@@ -219,15 +220,15 @@ fun OsmMapView(
         )
     }
 
-    var lastMyTime by remember { mutableStateOf(0L) }
+    val lastMyTime = remember { longArrayOf(0L) }
     LaunchedEffect(myLocation, mapHolder) {
         val loc = myLocation ?: return@LaunchedEffect
         val holder = mapHolder ?: return@LaunchedEffect
         val now = System.currentTimeMillis()
-        val duration = if (lastMyTime > 0L) {
-            (now - lastMyTime).coerceIn(200L, 2500L)
+        val duration = if (lastMyTime[0] > 0L) {
+            (now - lastMyTime[0]).coerceIn(200L, 2500L)
         } else 1000L
-        lastMyTime = now
+        lastMyTime[0] = now
 
         val isMoving = loc.speed >= 1.0f && loc.bearing != 0f
         holder.myMarker.title = "$myName (${String.format("%.1f", loc.speed * 3.6f)} km/h)"
@@ -240,15 +241,17 @@ fun OsmMapView(
         )
     }
 
-    // Khi người dùng đứng yên hoặc xoay điện thoại: đèn pin Google Maps xoay theo la bàn trực tiếp mượt mà 60fps
-    LaunchedEffect(mapHolder, myLocation) {
-        val isMoving = myLocation != null && myLocation.speed >= 1.0f && myLocation.bearing != 0f
-        if (!isMoving) {
-            orientationHelper.azimuthFlow.collect { azimuth ->
-                mapHolder?.let { holder ->
-                    holder.myMarker.rotation = -azimuth
-                    holder.mapView.postInvalidateOnAnimation()
-                }
+    // Khi người dùng đứng yên hoặc xoay điện thoại: đèn pin Google Maps xoay theo la bàn mượt mà,
+    // sử dụng rememberUpdatedState để coroutine chạy ổn định 1 lần duy nhất, không hủy/tạo lại coroutine liên tục.
+    val currentMyLocation by rememberUpdatedState(myLocation)
+    LaunchedEffect(mapHolder) {
+        val holder = mapHolder ?: return@LaunchedEffect
+        orientationHelper.azimuthFlow.collect { azimuth ->
+            val loc = currentMyLocation
+            val isMoving = loc != null && loc.speed >= 1.0f && loc.bearing != 0f
+            if (!isMoving) {
+                holder.myMarker.rotation = -azimuth
+                holder.mapView.postInvalidateOnAnimation()
             }
         }
     }
