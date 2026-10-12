@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PlayArrow
@@ -105,6 +106,19 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.End
         ) {
+            // Nút Đặt lại hướng Bắc (0 độ) chuẩn Google Maps khi xoay bản đồ
+            SmallFloatingActionButton(
+                onClick = {
+                    mapController.resetNorth()
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = PrimaryBlue,
+                shape = CircleShape,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+            ) {
+                Icon(Icons.Default.Explore, contentDescription = "Đặt lại hướng Bắc")
+            }
+
             // Nút Xem bao quát cả 2 người
             SmallFloatingActionButton(
                 onClick = {

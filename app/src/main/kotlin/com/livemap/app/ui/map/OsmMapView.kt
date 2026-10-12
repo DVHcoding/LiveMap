@@ -23,6 +23,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 
 class MapViewController(
     private var mapView: MapView? = null
@@ -39,6 +40,13 @@ class MapViewController(
         mapView?.controller?.apply {
             setZoom(zoom)
             animateTo(GeoPoint(lat, lng))
+        }
+    }
+
+    fun resetNorth() {
+        mapView?.let { v ->
+            v.mapOrientation = 0f
+            v.invalidate()
         }
     }
 
@@ -93,6 +101,7 @@ fun OsmMapView(
     // Xử lý vòng đời MapView và Cảm biến la bàn hướng quay
     DisposableEffect(lifecycleOwner, mapHolder) {
         orientationHelper.startListening()
+        mapHolder?.mapView?.onResume()
 
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -124,6 +133,17 @@ fun OsmMapView(
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { ctx ->
+            // Cấu hình cache thư mục nội bộ chống lỗi Scoped Storage trên Android 9-14
+            val osmBaseDir = java.io.File(ctx.cacheDir, "osmdroid")
+            val osmTilesDir = java.io.File(osmBaseDir, "tiles")
+            if (!osmTilesDir.exists()) osmTilesDir.mkdirs()
+
+            org.osmdroid.config.Configuration.getInstance().apply {
+                userAgentValue = "LiveMapApp/1.0.0 (Android; com.livemap.app)"
+                osmdroidBasePath = osmBaseDir
+                osmdroidTileCache = osmTilesDir
+            }
+
             val mapView = MapView(ctx).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
@@ -135,7 +155,16 @@ fun OsmMapView(
                 // Điểm khởi đầu mặc định
                 val defaultPoint = GeoPoint(21.0285, 105.8542)
                 controller.setCenter(defaultPoint)
+
+                // Kích hoạt ngay thread tải tile bản đồ
+                onResume()
             }
+
+            // Kích hoạt xoay bản đồ 360 độ tự do bằng 2 ngón tay (Pinch-to-rotate) chuẩn Google Maps
+            val rotationGestureOverlay = RotationGestureOverlay(mapView).apply {
+                isEnabled = true
+            }
+            mapView.overlays.add(rotationGestureOverlay)
 
             // Marker tâm điểm ở giữa ANCHOR_CENTER để đèn pin xoay tròn chính xác quanh chấm tròn
             val myMarker = Marker(mapView).apply {
@@ -213,7 +242,8 @@ fun OsmMapView(
         if (!isMoving) {
             orientationHelper.azimuthFlow.collect { azimuth ->
                 mapHolder?.let { holder ->
-                    holder.myMarker.rotation = -azimuth
+                    val mapRot = holder.mapView.mapOrientation
+                    holder.myMarker.rotation = -azimuth + mapRot
                     holder.mapView.postInvalidateOnAnimation()
                 }
             }

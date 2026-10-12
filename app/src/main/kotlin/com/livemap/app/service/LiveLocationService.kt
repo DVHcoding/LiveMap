@@ -128,9 +128,13 @@ class LiveLocationService : Service() {
         _isServiceRunning.value = true
     }
 
-    private fun initAndStartTracking() {
-        wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max safeguard
+    private var lastBatteryCheckTime: Long = 0L
+    private var cachedBatteryInfo: BatteryUtils.BatteryInfo = BatteryUtils.BatteryInfo(100, false)
+    private var lastPublishedTime: Long = 0L
+    private var lastPublishedLat: Double = 0.0
+    private var lastPublishedLng: Double = 0.0
 
+    private fun initAndStartTracking() {
         serviceScope.launch {
             val prefs = AppPreferences(applicationContext)
             pairCode = prefs.pairCodeFlow.first()
@@ -143,23 +147,46 @@ class LiveLocationService : Service() {
     }
 
     private fun handleNewLocation(loc: android.location.Location) {
-        val batteryInfo = BatteryUtils.getBatteryInfo(applicationContext)
+        val now = System.currentTimeMillis()
+
+        // 1. Chỉ truy vấn trạng thái Pin hệ thống 30 giây một lần (tiết kiệm CPU)
+        if (now - lastBatteryCheckTime > 30_000L || lastBatteryCheckTime == 0L) {
+            cachedBatteryInfo = BatteryUtils.getBatteryInfo(applicationContext)
+            lastBatteryCheckTime = now
+        }
+
+        val speed = if (loc.hasSpeed()) loc.speed else 0f
+        val isMoving = speed >= 0.5f
+        val deltaLat = kotlin.math.abs(loc.latitude - lastPublishedLat)
+        val deltaLng = kotlin.math.abs(loc.longitude - lastPublishedLng)
+        val hasDisplaced = deltaLat > 0.00003 || deltaLng > 0.00003 // Di chuyển > 3 mét
+
+        // 2. Chế độ tiết kiệm Pin thông minh: Khi đứng yên hoàn toàn, giãn nhịp gửi tin thành 3 giây
+        // Khi bắt đầu di chuyển: phát sóng ngay lập tức mỗi 1 giây để đối phương thấy mượt mà nhất
+        val shouldPublish = isMoving || hasDisplaced || (now - lastPublishedTime >= 3000L)
+
         val locationData = LocationData(
             senderId = myUserId,
             senderName = myName,
             latitude = loc.latitude,
             longitude = loc.longitude,
             bearing = if (loc.hasBearing()) loc.bearing else 0f,
-            speed = if (loc.hasSpeed()) loc.speed else 0f,
+            speed = speed,
             accuracy = if (loc.hasAccuracy()) loc.accuracy else 0f,
-            batteryLevel = batteryInfo.level,
-            isCharging = batteryInfo.isCharging,
-            timestamp = System.currentTimeMillis()
+            batteryLevel = cachedBatteryInfo.level,
+            isCharging = cachedBatteryInfo.isCharging,
+            timestamp = now
         )
 
         _myLocationFlow.value = locationData
-        MqttManager.publishLocation(locationData)
-        Log.d(TAG, "Location updated: lat=${loc.latitude}, lng=${loc.longitude}")
+
+        if (shouldPublish) {
+            lastPublishedTime = now
+            lastPublishedLat = loc.latitude
+            lastPublishedLng = loc.longitude
+            MqttManager.publishLocation(locationData)
+            Log.d(TAG, "Location published: lat=${loc.latitude}, lng=${loc.longitude}, speed=${speed}m/s")
+        }
     }
 
     @SuppressLint("MissingPermission")
