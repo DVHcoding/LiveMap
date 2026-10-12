@@ -23,7 +23,6 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 
 class MapViewController(
     private var mapView: MapView? = null
@@ -160,18 +159,21 @@ fun OsmMapView(
                 onResume()
             }
 
-            // Kích hoạt xoay bản đồ 360 độ tự do bằng 2 ngón tay (Pinch-to-rotate) chuẩn Google Maps
-            val rotationGestureOverlay = RotationGestureOverlay(mapView).apply {
-                isEnabled = true
-            }
-            mapView.overlays.add(rotationGestureOverlay)
-
             // Marker tâm điểm ở giữa ANCHOR_CENTER để đèn pin xoay tròn chính xác quanh chấm tròn
             val myMarker = Marker(mapView).apply {
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 icon = MarkerIconFactory.getMarker(ctx, isPartner = false)
                 title = myName
             }
+
+            // Kích hoạt xoay bản đồ 360 độ 2 ngón tay siêu mượt (Smooth 60fps/120fps, không lag)
+            val rotationGestureOverlay = SmoothRotationGestureOverlay(mapView) { mapRot ->
+                val isMoving = myLocation != null && myLocation.speed >= 1.0f && myLocation.bearing != 0f
+                if (!isMoving) {
+                    myMarker.rotation = -orientationHelper.azimuthFlow.value + mapRot
+                }
+            }
+            mapView.overlays.add(rotationGestureOverlay)
             mapView.overlays.add(myMarker)
 
             val partnerMarker = Marker(mapView).apply {
