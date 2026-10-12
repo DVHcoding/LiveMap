@@ -37,7 +37,6 @@ object MqttManager {
     private var currentMyUserId: String = "USER_A"
     private var currentDeviceId: String = ""
     private var lockedPartnerDeviceId: String? = null
-    private var onLockedPartnerUpdated: ((String?) -> Unit)? = null
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
@@ -64,8 +63,8 @@ object MqttManager {
                 if (current != null) {
                     val now = System.currentTimeMillis()
                     if (now - lastReceivedTimestamp > 15_000L) {
-                        Log.d(TAG, "Partner timeout (>15s without signal). Auto-clearing partner location.")
-                        _partnerLocation.value = null
+                        Log.d(TAG, "Partner timeout (>15s without signal). Auto-clearing partner location & releasing slot.")
+                        clearPartnerLocation()
                     }
                 }
             }
@@ -76,6 +75,7 @@ object MqttManager {
 
     fun clearPartnerLocation() {
         _partnerLocation.value = null
+        lockedPartnerDeviceId = null // Giải phóng slot đối phương để người khác có thể vào
         lastReceivedTimestamp = 0L
     }
 
@@ -132,13 +132,9 @@ object MqttManager {
     fun connect(
         pairCode: String,
         myUserId: String,
-        deviceId: String = currentDeviceId,
-        lockedPartnerId: String? = lockedPartnerDeviceId,
-        onUpdateLock: ((String?) -> Unit)? = onLockedPartnerUpdated
+        deviceId: String = currentDeviceId
     ) {
         currentDeviceId = deviceId
-        lockedPartnerDeviceId = lockedPartnerId
-        onLockedPartnerUpdated = onUpdateLock
 
         val isDifferentRoom = currentPairCode != null && currentPairCode != pairCode
         val isDifferentUser = currentMyUserId != myUserId
@@ -147,8 +143,6 @@ object MqttManager {
             // Đổi phòng hoặc đổi user: gửi tin rời phòng cũ và xóa sạch marker đối phương cũ
             publishOfflineStatus()
             clearPartnerLocation()
-            lockedPartnerDeviceId = null
-            onLockedPartnerUpdated?.invoke(null)
             val oldCode = currentPairCode
             if (oldCode != null) {
                 val oldTopic = getTopic(oldCode)
@@ -201,37 +195,42 @@ object MqttManager {
                                 return
                             }
 
-                            // 2. Chỉ nhận tin từ đối phương (khác userId của mình)
-                            if (data.senderId != currentMyUserId) {
-                                val senderDevId = data.deviceId
-
-                                if (data.status == "OFFLINE") {
-                                    if (lockedPartnerDeviceId == null || senderDevId == lockedPartnerDeviceId) {
-                                        Log.d(TAG, "Partner explicitly sent OFFLINE / leave room: clearing partner marker")
-                                        clearPartnerLocation()
-                                    }
-                                    return
-                                }
-
-                                // 3. Cơ chế Khóa chốt 2 người (Device Pairing Lock):
-                                if (lockedPartnerDeviceId == null) {
-                                    // Lần đầu nhận tin từ đối phương: Khóa chốt thiết bị này làm đối phương duy nhất!
-                                    if (senderDevId.isNotBlank()) {
-                                        lockedPartnerDeviceId = senderDevId
-                                        onLockedPartnerUpdated?.invoke(senderDevId)
-                                        Log.d(TAG, "Pair lock established with partner device: $senderDevId")
-                                    }
-                                } else if (senderDevId.isNotBlank() && senderDevId != lockedPartnerDeviceId) {
-                                    // CÓ THIẾT BỊ THỨ 3 NHẢY VÀO PHÒNG!
-                                    Log.w(TAG, "Rejected unauthorized 3rd device: $senderDevId (expected: $lockedPartnerDeviceId)")
-                                    publishRoomFull(targetDeviceId = senderDevId)
-                                    return // VỨT BỎ TỌA ĐỘ NGƯỜI THỨ 3, TUYỆT ĐỐI KHÔNG VẼ LÊN BẢN ĐỒ!
-                                }
-
-                                lastReceivedTimestamp = System.currentTimeMillis()
-                                Log.d(TAG, "Partner location arrived: lat=${data.latitude}, lng=${data.longitude}, speed=${data.speed}")
-                                _partnerLocation.value = data
+                            // 2. Bỏ qua tin do chính máy mình phát đi (loopback)
+                            val senderDevId = data.deviceId
+                            if (senderDevId.isNotBlank() && senderDevId == currentDeviceId) {
+                                return
                             }
+                            if (senderDevId.isBlank() && data.senderId == currentMyUserId) {
+                                return
+                            }
+
+                            // 3. Xử lý khi đối phương rời phòng / ngắt kết nối -> Giải phóng slot ngay lập tức
+                            if (data.status == "OFFLINE") {
+                                if (lockedPartnerDeviceId == null || senderDevId == lockedPartnerDeviceId) {
+                                    Log.d(TAG, "Partner explicitly sent OFFLINE / leave room: clearing marker & releasing slot")
+                                    clearPartnerLocation()
+                                }
+                                return
+                            }
+
+                            // 4. Cơ chế Khóa chốt động 2 người (Dynamic 2-Slot Room Presence):
+                            if (lockedPartnerDeviceId == null) {
+                                // Slot đối phương đang trống (người cũ đã offline hoặc mới vào):
+                                // Thiết bị mới này chiếm slot đối phương hợp lệ!
+                                if (senderDevId.isNotBlank()) {
+                                    lockedPartnerDeviceId = senderDevId
+                                    Log.d(TAG, "Partner slot acquired by device: $senderDevId")
+                                }
+                            } else if (senderDevId.isNotBlank() && senderDevId != lockedPartnerDeviceId) {
+                                // ĐÃ CÓ ĐỐI PHƯƠNG ACTIVE RỒI -> ĐỦ 2 NGƯỜI -> TỪ CHỐI & ĐÁ NGƯỜI THỨ 3!
+                                Log.w(TAG, "Room full (already paired with $lockedPartnerDeviceId). Rejecting 3rd device: $senderDevId")
+                                publishRoomFull(targetDeviceId = senderDevId)
+                                return // BỎ QUA TỌA ĐỘ NGƯỜI THỨ 3, TUYỆT ĐỐI KHÔNG VẼ LÊN BẢN ĐỒ!
+                            }
+
+                            lastReceivedTimestamp = System.currentTimeMillis()
+                            Log.d(TAG, "Partner location arrived: lat=${data.latitude}, lng=${data.longitude}, speed=${data.speed}")
+                            _partnerLocation.value = data
                             Unit
                         } catch (e: Exception) {
                             Log.e(TAG, "Error parsing location JSON: ${e.message}")

@@ -142,18 +142,10 @@ class LiveLocationService : Service() {
             myUserId = prefs.myUserIdFlow.first()
             myName = prefs.myNameFlow.first()
             deviceId = prefs.getOrCreateDeviceId()
-            val lockedPartnerId = prefs.getLockedPartnerDeviceId()
-
             MqttManager.connect(
                 pairCode = pairCode,
                 myUserId = myUserId,
-                deviceId = deviceId,
-                lockedPartnerId = lockedPartnerId,
-                onUpdateLock = { newLock ->
-                    serviceScope.launch {
-                        prefs.saveLockedPartnerDeviceId(newLock)
-                    }
-                }
+                deviceId = deviceId
             )
             startLocationUpdates()
         }

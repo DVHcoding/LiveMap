@@ -87,13 +87,11 @@ class MainActivity : ComponentActivity() {
                     val mapProvider by appPreferences.mapProviderFlow.collectAsState(initial = AppPreferences.MAP_PROVIDER_OSM)
 
                     var deviceId by remember { mutableStateOf("") }
-                    var lockedPartnerId by remember { mutableStateOf<String?>(null) }
 
                     // Khởi tạo mã phòng & mã thiết bị duy nhất nếu cài app lần đầu
                     LaunchedEffect(Unit) {
                         appPreferences.ensurePairCodeInitialized()
                         deviceId = appPreferences.getOrCreateDeviceId()
-                        lockedPartnerId = appPreferences.getLockedPartnerDeviceId()
                         checkAndRequestPermissions()
                     }
 
@@ -110,14 +108,7 @@ class MainActivity : ComponentActivity() {
                             MqttManager.connect(
                                 pairCode = pairCode,
                                 myUserId = myUserId,
-                                deviceId = deviceId,
-                                lockedPartnerId = lockedPartnerId,
-                                onUpdateLock = { newLock ->
-                                    lifecycleScope.launch {
-                                        appPreferences.saveLockedPartnerDeviceId(newLock)
-                                        lockedPartnerId = newLock
-                                    }
-                                }
+                                deviceId = deviceId
                             )
                         }
                     }
@@ -156,14 +147,7 @@ class MainActivity : ComponentActivity() {
                                 MqttManager.connect(
                                     pairCode = newCode,
                                     myUserId = newUserId,
-                                    deviceId = deviceId,
-                                    lockedPartnerId = null,
-                                    onUpdateLock = { newLock ->
-                                        lifecycleScope.launch {
-                                            appPreferences.saveLockedPartnerDeviceId(newLock)
-                                            lockedPartnerId = newLock
-                                        }
-                                    }
+                                    deviceId = deviceId
                                 )
 
                                 if (isServiceRunning) {

@@ -22,7 +22,6 @@ class AppPreferences(private val context: Context) {
         private val MAP_PROVIDER_KEY = stringPreferencesKey("map_provider")
 
         private val DEVICE_ID_KEY = stringPreferencesKey("device_id")
-        private val LOCKED_PARTNER_DEVICE_ID_KEY = stringPreferencesKey("locked_partner_device_id")
 
         const val DEFAULT_USER_A = "USER_A"
         const val DEFAULT_USER_B = "USER_B"
@@ -65,20 +64,6 @@ class AppPreferences(private val context: Context) {
         return newId
     }
 
-    suspend fun getLockedPartnerDeviceId(): String? {
-        return context.dataStore.data.first()[LOCKED_PARTNER_DEVICE_ID_KEY]
-    }
-
-    suspend fun saveLockedPartnerDeviceId(partnerDeviceId: String?) {
-        context.dataStore.edit { prefs ->
-            if (partnerDeviceId == null) {
-                prefs.remove(LOCKED_PARTNER_DEVICE_ID_KEY)
-            } else {
-                prefs[LOCKED_PARTNER_DEVICE_ID_KEY] = partnerDeviceId
-            }
-        }
-    }
-
     val myUserIdFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[MY_USER_ID_KEY] ?: DEFAULT_USER_A
     }
@@ -97,9 +82,6 @@ class AppPreferences(private val context: Context) {
 
     suspend fun savePairCode(code: String) {
         context.dataStore.edit {
-            if (it[PAIR_CODE_KEY] != code.trim()) {
-                it.remove(LOCKED_PARTNER_DEVICE_ID_KEY)
-            }
             it[PAIR_CODE_KEY] = code.trim()
         }
     }
