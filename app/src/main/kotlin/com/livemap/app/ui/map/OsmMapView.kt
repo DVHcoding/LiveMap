@@ -211,12 +211,14 @@ fun OsmMapView(
         } else 1000L
         lastPartnerTime[0] = now
 
+        val isPartnerMoving = loc.speed >= 0.5f && loc.bearing != 0f
         holder.partnerMarker.title = "$partnerName (${String.format("%.1f", loc.speed * 3.6f)} km/h)"
         holder.partnerSmoothHelper.animateMarkerTo(
-            holder.partnerMarker,
-            GeoPoint(loc.latitude, loc.longitude),
-            loc.bearing,
-            durationMs = duration
+            marker = holder.partnerMarker,
+            targetGeoPoint = GeoPoint(loc.latitude, loc.longitude),
+            targetBearing = loc.bearing,
+            durationMs = duration,
+            animateRotation = isPartnerMoving
         )
     }
 
