@@ -163,19 +163,17 @@ fun OsmMapView(
             }
 
             // Marker tâm điểm ở giữa ANCHOR_CENTER để đèn pin xoay tròn chính xác quanh chấm tròn
+            // isFlat = true để marker nằm phẳng trên bản đồ (chuẩn Google Maps Navigation),
+            // tự động xoay cùng bản đồ mà không bị tính sai góc khi xoay 2 ngón tay.
             val myMarker = Marker(mapView).apply {
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 icon = MarkerIconFactory.getMarker(ctx, isPartner = false)
                 title = myName
+                isFlat = true
             }
 
             // Kích hoạt xoay bản đồ 360 độ 2 ngón tay siêu mượt (Smooth 60fps/120fps, không lag)
-            val rotationGestureOverlay = SmoothRotationGestureOverlay(mapView) { mapRot ->
-                val isMoving = myLocation != null && myLocation.speed >= 1.0f && myLocation.bearing != 0f
-                if (!isMoving) {
-                    myMarker.rotation = -orientationHelper.azimuthFlow.value + mapRot
-                }
-            }
+            val rotationGestureOverlay = SmoothRotationGestureOverlay(mapView)
             mapView.overlays.add(rotationGestureOverlay)
             mapView.overlays.add(myMarker)
 
@@ -183,6 +181,7 @@ fun OsmMapView(
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 icon = MarkerIconFactory.getMarker(ctx, isPartner = true)
                 title = partnerName
+                isFlat = true
             }
             mapView.overlays.add(partnerMarker)
 
@@ -247,8 +246,7 @@ fun OsmMapView(
         if (!isMoving) {
             orientationHelper.azimuthFlow.collect { azimuth ->
                 mapHolder?.let { holder ->
-                    val mapRot = holder.mapView.mapOrientation
-                    holder.myMarker.rotation = -azimuth + mapRot
+                    holder.myMarker.rotation = -azimuth
                     holder.mapView.postInvalidateOnAnimation()
                 }
             }
