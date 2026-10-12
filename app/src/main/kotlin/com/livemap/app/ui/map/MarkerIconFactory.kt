@@ -100,4 +100,27 @@ object MarkerIconFactory {
         }
         return drawable
     }
+
+    fun getBitmap(context: Context, isPartner: Boolean): Bitmap {
+        val drawable = getMarker(context, isPartner) as BitmapDrawable
+        return drawable.bitmap
+    }
+
+    private var myDescriptor: com.google.android.gms.maps.model.BitmapDescriptor? = null
+    private var partnerDescriptor: com.google.android.gms.maps.model.BitmapDescriptor? = null
+
+    fun getBitmapDescriptor(context: Context, isPartner: Boolean): com.google.android.gms.maps.model.BitmapDescriptor? {
+        if (isPartner && partnerDescriptor != null) return partnerDescriptor
+        if (!isPartner && myDescriptor != null) return myDescriptor
+        return try {
+            com.google.android.gms.maps.MapsInitializer.initialize(context.applicationContext)
+            val bmp = getBitmap(context, isPartner)
+            val desc = com.google.android.gms.maps.model.BitmapDescriptorFactory.fromBitmap(bmp)
+            if (isPartner) partnerDescriptor = desc else myDescriptor = desc
+            desc
+        } catch (e: Throwable) {
+            e.printStackTrace()
+            null
+        }
+    }
 }

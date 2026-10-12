@@ -63,6 +63,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         appPreferences = AppPreferences(this)
 
+        try {
+            com.google.android.gms.maps.MapsInitializer.initialize(applicationContext)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         setContent {
             LiveMapTheme {
                 Surface(
@@ -78,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     val myUserId by appPreferences.myUserIdFlow.collectAsState(initial = AppPreferences.DEFAULT_USER_A)
                     val myName by appPreferences.myNameFlow.collectAsState(initial = "Tôi")
                     val partnerName by appPreferences.partnerNameFlow.collectAsState(initial = "Người ấy")
+                    val mapProvider by appPreferences.mapProviderFlow.collectAsState(initial = AppPreferences.MAP_PROVIDER_OSM)
 
                     // Tự động kết nối MQTT khi vào app để luôn nhận được vị trí đối phương
                     LaunchedEffect(pairCode, myUserId) {
@@ -98,6 +105,12 @@ class MainActivity : ComponentActivity() {
                         myUserId = myUserId,
                         myName = myName,
                         partnerName = partnerName,
+                        mapProvider = mapProvider,
+                        onSelectMapProvider = { newProvider ->
+                            lifecycleScope.launch {
+                                appPreferences.saveMapProvider(newProvider)
+                            }
+                        },
                         onToggleSharing = {
                             if (isServiceRunning) {
                                 LiveLocationService.stopService(this@MainActivity)
@@ -105,12 +118,13 @@ class MainActivity : ComponentActivity() {
                                 checkAndRequestPermissions()
                             }
                         },
-                        onSaveSettings = { newCode, newUserId, newMyName, newPartnerName ->
+                        onSaveSettings = { newCode, newUserId, newMyName, newPartnerName, newProvider ->
                             lifecycleScope.launch {
                                 appPreferences.savePairCode(newCode)
                                 appPreferences.saveMyUserId(newUserId)
                                 appPreferences.saveMyName(newMyName)
                                 appPreferences.savePartnerName(newPartnerName)
+                                appPreferences.saveMapProvider(newProvider)
 
                                 MqttManager.disconnect()
                                 MqttManager.connect(newCode, newUserId)

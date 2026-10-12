@@ -18,10 +18,17 @@ class AppPreferences(private val context: Context) {
         private val MY_NAME_KEY = stringPreferencesKey("my_name")
         private val PARTNER_NAME_KEY = stringPreferencesKey("partner_name")
         private val IS_SHARING_ACTIVE_KEY = booleanPreferencesKey("is_sharing_active")
+        private val MAP_PROVIDER_KEY = stringPreferencesKey("map_provider")
 
         const val DEFAULT_PAIR_CODE = "live_couple_8888"
         const val DEFAULT_USER_A = "USER_A"
         const val DEFAULT_USER_B = "USER_B"
+        const val MAP_PROVIDER_OSM = "OSM"
+        const val MAP_PROVIDER_GOOGLE = "GOOGLE"
+    }
+
+    val mapProviderFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[MAP_PROVIDER_KEY] ?: MAP_PROVIDER_OSM
     }
 
     val pairCodeFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -62,5 +69,9 @@ class AppPreferences(private val context: Context) {
 
     suspend fun saveSharingActive(active: Boolean) {
         context.dataStore.edit { it[IS_SHARING_ACTIVE_KEY] = active }
+    }
+
+    suspend fun saveMapProvider(provider: String) {
+        context.dataStore.edit { it[MAP_PROVIDER_KEY] = provider }
     }
 }

@@ -25,53 +25,7 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 
-class MapViewController(
-    private var mapView: MapView? = null
-) {
-    fun attach(view: MapView) {
-        this.mapView = view
-    }
 
-    fun detach() {
-        this.mapView = null
-    }
-
-    fun centerOnLocation(lat: Double, lng: Double, zoom: Double = 17.5) {
-        mapView?.controller?.apply {
-            setZoom(zoom)
-            animateTo(GeoPoint(lat, lng))
-        }
-    }
-
-    fun resetNorth() {
-        mapView?.let { v ->
-            v.mapOrientation = 0f
-            v.invalidate()
-        }
-    }
-
-    fun fitBothLocations(myLoc: LocationData?, partnerLoc: LocationData?) {
-        val view = mapView ?: return
-        if (myLoc != null && partnerLoc != null) {
-            val north = maxOf(myLoc.latitude, partnerLoc.latitude)
-            val south = minOf(myLoc.latitude, partnerLoc.latitude)
-            val east = maxOf(myLoc.longitude, partnerLoc.longitude)
-            val west = minOf(myLoc.longitude, partnerLoc.longitude)
-
-            val box = BoundingBox(
-                north + 0.005,
-                east + 0.005,
-                south - 0.005,
-                west - 0.005
-            )
-            view.zoomToBoundingBox(box, true, 120)
-        } else if (partnerLoc != null) {
-            centerOnLocation(partnerLoc.latitude, partnerLoc.longitude)
-        } else if (myLoc != null) {
-            centerOnLocation(myLoc.latitude, myLoc.longitude)
-        }
-    }
-}
 
 private class OsmMapHolder(
     val mapView: MapView,
@@ -99,7 +53,7 @@ fun OsmMapView(
     var hasCenteredOnFirstLocation by remember { mutableStateOf(false) }
 
     // Xử lý vòng đời MapView và Cảm biến la bàn hướng quay
-    DisposableEffect(lifecycleOwner, mapHolder) {
+    DisposableEffect(lifecycleOwner) {
         orientationHelper.startListening()
         mapHolder?.mapView?.onResume()
 
@@ -118,15 +72,47 @@ fun OsmMapView(
                     mapHolder?.partnerSmoothHelper?.cancel()
                     mapHolder?.mapView?.onDetach()
                     orientationHelper.stopListening()
-                    mapViewController.detach()
                 }
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            mapHolder?.mySmoothHelper?.cancel()
+            mapHolder?.partnerSmoothHelper?.cancel()
             orientationHelper.stopListening()
             lifecycleOwner.lifecycle.removeObserver(observer)
+            mapViewController.onCenterOnLocation = null
+            mapViewController.onResetNorth = null
+            mapViewController.onFitBothLocations = null
+        }
+    }
+
+    // Luôn gắn các lệnh điều khiển từ nút bấm ngoài giao diện (zoom, reset bắc, bao quát) khi mapHolder sẵn sàng
+    LaunchedEffect(mapViewController, mapHolder) {
+        val holder = mapHolder ?: return@LaunchedEffect
+        val mapView = holder.mapView
+        mapViewController.onCenterOnLocation = { lat, lng, zoom ->
+            mapView.controller.setZoom(zoom)
+            mapView.controller.animateTo(GeoPoint(lat, lng))
+        }
+        mapViewController.onResetNorth = {
+            mapView.mapOrientation = 0f
+            mapView.invalidate()
+        }
+        mapViewController.onFitBothLocations = { myLoc, partnerLoc ->
+            if (myLoc != null && partnerLoc != null) {
+                val north = maxOf(myLoc.latitude, partnerLoc.latitude)
+                val south = minOf(myLoc.latitude, partnerLoc.latitude)
+                val east = maxOf(myLoc.longitude, partnerLoc.longitude)
+                val west = minOf(myLoc.longitude, partnerLoc.longitude)
+                val box = BoundingBox(north + 0.005, east + 0.005, south - 0.005, west - 0.005)
+                mapView.zoomToBoundingBox(box, true, 120)
+            } else if (partnerLoc != null) {
+                mapView.controller.animateTo(GeoPoint(partnerLoc.latitude, partnerLoc.longitude))
+            } else if (myLoc != null) {
+                mapView.controller.animateTo(GeoPoint(myLoc.latitude, myLoc.longitude))
+            }
         }
     }
 
@@ -153,11 +139,15 @@ fun OsmMapView(
                 zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                 minZoomLevel = 4.0
                 maxZoomLevel = 20.0
-                controller.setZoom(16.0)
 
-                // Điểm khởi đầu mặc định
-                val defaultPoint = GeoPoint(21.0285, 105.8542)
-                controller.setCenter(defaultPoint)
+                // Điểm khởi đầu: ưu tiên vị trí thực tế của người dùng nếu đã có
+                val initialPoint = if (myLocation != null) {
+                    GeoPoint(myLocation.latitude, myLocation.longitude)
+                } else {
+                    GeoPoint(21.0285, 105.8542)
+                }
+                controller.setCenter(initialPoint)
+                controller.setZoom(if (myLocation != null) 17.5 else 16.0)
 
                 // Kích hoạt ngay thread tải tile bản đồ
                 onResume()
@@ -171,6 +161,12 @@ fun OsmMapView(
                 icon = MarkerIconFactory.getMarker(ctx, isPartner = false)
                 title = myName
                 isFlat = true
+                if (myLocation != null) {
+                    position = GeoPoint(myLocation.latitude, myLocation.longitude)
+                    if (myLocation.bearing != 0f) {
+                        rotation = -myLocation.bearing
+                    }
+                }
             }
 
             // Kích hoạt xoay bản đồ 360 độ 2 ngón tay siêu mượt (Smooth 60fps/120fps, không lag)
@@ -183,6 +179,13 @@ fun OsmMapView(
                 icon = MarkerIconFactory.getMarker(ctx, isPartner = true)
                 title = partnerName
                 isFlat = true
+                setVisible(partnerLocation != null)
+                if (partnerLocation != null) {
+                    position = GeoPoint(partnerLocation.latitude, partnerLocation.longitude)
+                    if (partnerLocation.bearing != 0f) {
+                        rotation = -partnerLocation.bearing
+                    }
+                }
             }
             mapView.overlays.add(partnerMarker)
 
@@ -195,16 +198,40 @@ fun OsmMapView(
             )
 
             mapHolder = holder
-            mapViewController.attach(mapView)
             mapView
         },
-        update = { _ -> }
+        update = { _ ->
+            // Luôn đảm bảo marker có vị trí tọa độ đầy đủ khi view được tái sử dụng
+            mapHolder?.let { holder ->
+                if (myLocation != null && (holder.myMarker.position == null || holder.myMarker.position.latitude == 0.0)) {
+                    holder.myMarker.position = GeoPoint(myLocation.latitude, myLocation.longitude)
+                    holder.mapView.invalidate()
+                }
+                if (partnerLocation != null) {
+                    holder.partnerMarker.setVisible(true)
+                    if (holder.partnerMarker.position == null || holder.partnerMarker.position.latitude == 0.0) {
+                        holder.partnerMarker.position = GeoPoint(partnerLocation.latitude, partnerLocation.longitude)
+                    }
+                    holder.mapView.invalidate()
+                } else {
+                    holder.partnerMarker.setVisible(false)
+                    holder.mapView.invalidate()
+                }
+            }
+        }
     )
 
     val lastPartnerTime = remember { longArrayOf(0L) }
     LaunchedEffect(partnerLocation, mapHolder) {
-        val loc = partnerLocation ?: return@LaunchedEffect
         val holder = mapHolder ?: return@LaunchedEffect
+        if (partnerLocation == null) {
+            holder.partnerSmoothHelper.cancel()
+            holder.partnerMarker.setVisible(false)
+            holder.mapView.invalidate()
+            return@LaunchedEffect
+        }
+        holder.partnerMarker.setVisible(true)
+        val loc = partnerLocation
         val now = System.currentTimeMillis()
         val duration = if (lastPartnerTime[0] > 0L) {
             (now - lastPartnerTime[0]).coerceIn(200L, 2500L)
@@ -258,11 +285,14 @@ fun OsmMapView(
         }
     }
 
-    // Tự động focus vào vị trí của mình khi vừa nhận được tọa độ lần đầu
-    LaunchedEffect(myLocation) {
-        if (myLocation != null && !hasCenteredOnFirstLocation) {
+    // Tự động focus vào vị trí của mình khi khởi tạo hoặc khi chuyển lại map
+    LaunchedEffect(mapHolder, myLocation) {
+        val holder = mapHolder ?: return@LaunchedEffect
+        val loc = myLocation ?: return@LaunchedEffect
+        if (!hasCenteredOnFirstLocation) {
             hasCenteredOnFirstLocation = true
-            mapViewController.centerOnLocation(myLocation.latitude, myLocation.longitude, zoom = 17.5)
+            holder.mapView.controller.setZoom(17.5)
+            holder.mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
         }
     }
 }

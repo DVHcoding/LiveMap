@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.eclipse.paho.client.mqttv3.IMqttActionListener
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
@@ -36,13 +39,85 @@ object MqttManager {
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
-    private val _partnerLocation = MutableSharedFlow<LocationData>(extraBufferCapacity = 10)
-    val partnerLocation: SharedFlow<LocationData> = _partnerLocation.asSharedFlow()
+    private val _partnerLocation = MutableStateFlow<LocationData?>(null)
+    val partnerLocation: StateFlow<LocationData?> = _partnerLocation.asStateFlow()
+
+    private var lastReceivedTimestamp: Long = 0L
+    private var offlineCheckerJob: Job? = null
+
+    init {
+        startOfflineChecker()
+    }
+
+    private fun startOfflineChecker() {
+        offlineCheckerJob?.cancel()
+        offlineCheckerJob = scope.launch {
+            while (isActive) {
+                delay(2000L)
+                val current = _partnerLocation.value
+                if (current != null) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastReceivedTimestamp > 15_000L) {
+                        Log.d(TAG, "Partner timeout (>15s without signal). Auto-clearing partner location.")
+                        _partnerLocation.value = null
+                    }
+                }
+            }
+        }
+    }
 
     private fun getTopic(pairCode: String): String = "livemap/pair/$pairCode/location"
 
+    fun clearPartnerLocation() {
+        _partnerLocation.value = null
+        lastReceivedTimestamp = 0L
+    }
+
+    fun publishOfflineStatus() {
+        val pairCode = currentPairCode ?: return
+        if (client?.isConnected != true) return
+        try {
+            val offlineMsg = LocationData(
+                senderId = currentMyUserId,
+                senderName = "",
+                latitude = 0.0,
+                longitude = 0.0,
+                status = "OFFLINE",
+                timestamp = System.currentTimeMillis()
+            )
+            val json = gson.toJson(offlineMsg)
+            val message = MqttMessage(json.toByteArray()).apply {
+                qos = 1
+            }
+            client?.publish(getTopic(pairCode), message)
+            Log.d(TAG, "Published OFFLINE status to topic: ${getTopic(pairCode)}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to publish offline status: ${e.message}")
+        }
+    }
+
     @Synchronized
     fun connect(pairCode: String, myUserId: String) {
+        val isDifferentRoom = currentPairCode != null && currentPairCode != pairCode
+        val isDifferentUser = currentMyUserId != myUserId
+
+        if (isDifferentRoom || isDifferentUser) {
+            // Đổi phòng hoặc đổi user: gửi tin rời phòng cũ và xóa sạch marker đối phương cũ
+            publishOfflineStatus()
+            clearPartnerLocation()
+            val oldCode = currentPairCode
+            if (oldCode != null) {
+                val oldTopic = getTopic(oldCode)
+                try {
+                    if (client?.isConnected == true) {
+                        client?.unsubscribe(oldTopic)
+                        Log.d(TAG, "Unsubscribed from old topic: $oldTopic")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to unsubscribe old topic: ${e.message}")
+                }
+            }
+        }
         currentPairCode = pairCode
         currentMyUserId = myUserId
 
@@ -75,8 +150,13 @@ object MqttManager {
                             val data = gson.fromJson(json, LocationData::class.java)
                             // Chỉ nhận tin từ đối phương, bỏ qua tin do chính mình broadcast
                             if (data.senderId != currentMyUserId) {
-                                scope.launch {
-                                    _partnerLocation.emit(data)
+                                if (data.status == "OFFLINE") {
+                                    Log.d(TAG, "Partner explicitly sent OFFLINE / leave room: clearing partner marker")
+                                    clearPartnerLocation()
+                                } else {
+                                    lastReceivedTimestamp = System.currentTimeMillis()
+                                    Log.d(TAG, "Partner location arrived: lat=${data.latitude}, lng=${data.longitude}, speed=${data.speed}")
+                                    _partnerLocation.value = data
                                 }
                             }
                             Unit
@@ -146,11 +226,22 @@ object MqttManager {
     @Synchronized
     fun disconnect() {
         try {
+            publishOfflineStatus()
+            val oldCode = currentPairCode
+            if (oldCode != null) {
+                val oldTopic = getTopic(oldCode)
+                try {
+                    if (client?.isConnected == true) {
+                        client?.unsubscribe(oldTopic)
+                    }
+                } catch (_: Exception) {}
+            }
             if (client?.isConnected == true) {
                 client?.disconnect()
             }
             client = null
             _isConnected.value = false
+            clearPartnerLocation()
         } catch (e: Exception) {
             Log.e(TAG, "Error disconnecting MQTT: ${e.message}")
         }

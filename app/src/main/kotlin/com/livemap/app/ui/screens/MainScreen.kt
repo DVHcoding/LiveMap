@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PlayArrow
@@ -53,6 +54,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.livemap.app.data.model.LocationData
+import com.livemap.app.data.pref.AppPreferences
+import com.livemap.app.ui.map.GoogleMapView
 import com.livemap.app.ui.map.MapViewController
 import com.livemap.app.ui.map.OsmMapView
 import com.livemap.app.ui.theme.PartnerPink
@@ -71,22 +74,34 @@ fun MainScreen(
     myUserId: String,
     myName: String,
     partnerName: String,
+    mapProvider: String,
+    onSelectMapProvider: (String) -> Unit,
     onToggleSharing: () -> Unit,
-    onSaveSettings: (pairCode: String, userId: String, myName: String, partnerName: String) -> Unit
+    onSaveSettings: (pairCode: String, userId: String, myName: String, partnerName: String, mapProvider: String) -> Unit
 ) {
     val context = LocalContext.current
     val mapController = remember { MapViewController() }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 1. Bản đồ OpenStreetMap hiển thị toàn màn hình
-        OsmMapView(
-            myLocation = myLocation,
-            partnerLocation = partnerLocation,
-            myName = myName,
-            partnerName = partnerName,
-            mapViewController = mapController
-        )
+        // 1. Hiển thị Map tương ứng (OpenStreetMap mặc định hoặc Google Maps)
+        if (mapProvider == AppPreferences.MAP_PROVIDER_GOOGLE) {
+            GoogleMapView(
+                myLocation = myLocation,
+                partnerLocation = partnerLocation,
+                myName = myName,
+                partnerName = partnerName,
+                mapViewController = mapController
+            )
+        } else {
+            OsmMapView(
+                myLocation = myLocation,
+                partnerLocation = partnerLocation,
+                myName = myName,
+                partnerName = partnerName,
+                mapViewController = mapController
+            )
+        }
 
         // 2. Thanh tiêu đề & trạng thái kết nối trên cùng
         TopOverlayHeader(
@@ -106,6 +121,26 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.End
         ) {
+            // Nút Chuyển đổi Nguồn bản đồ (OpenStreetMap <-> Google Maps)
+            SmallFloatingActionButton(
+                onClick = {
+                    val nextProvider = if (mapProvider == AppPreferences.MAP_PROVIDER_GOOGLE) {
+                        AppPreferences.MAP_PROVIDER_OSM
+                    } else {
+                        AppPreferences.MAP_PROVIDER_GOOGLE
+                    }
+                    onSelectMapProvider(nextProvider)
+                    val providerName = if (nextProvider == AppPreferences.MAP_PROVIDER_GOOGLE) "Google Maps" else "OpenStreetMap"
+                    Toast.makeText(context, "Đã chuyển sang $providerName", Toast.LENGTH_SHORT).show()
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = if (mapProvider == AppPreferences.MAP_PROVIDER_GOOGLE) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
+                shape = CircleShape,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+            ) {
+                Icon(Icons.Default.Layers, contentDescription = "Đổi nguồn bản đồ")
+            }
+
             // Nút Đặt lại hướng Bắc (0 độ) chuẩn Google Maps khi xoay bản đồ
             SmallFloatingActionButton(
                 onClick = {
@@ -142,11 +177,11 @@ fun MainScreen(
                     if (partnerLocation != null) {
                         mapController.centerOnLocation(partnerLocation.latitude, partnerLocation.longitude, zoom = 17.5)
                     } else {
-                        Toast.makeText(context, "Chưa nhận được vị trí từ $partnerName", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "$partnerName hiện chưa có tín hiệu vị trí hoặc đang offline", Toast.LENGTH_SHORT).show()
                     }
                 },
-                containerColor = PartnerPink,
-                contentColor = Color.White,
+                containerColor = if (partnerLocation != null) PartnerPink else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (partnerLocation != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 shape = CircleShape,
                 elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
             ) {
@@ -195,6 +230,7 @@ fun MainScreen(
             currentUserId = myUserId,
             currentMyName = myName,
             currentPartnerName = partnerName,
+            currentMapProvider = mapProvider,
             onDismiss = { showSettingsDialog = false },
             onSave = onSaveSettings
         )
@@ -289,7 +325,7 @@ private fun BottomDashboard(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(PartnerPink),
+                            .background(if (partnerLocation != null) PartnerPink else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -320,7 +356,7 @@ private fun BottomDashboard(
                             )
                         } else {
                             Text(
-                                text = "Chưa có tín hiệu vị trí",
+                                text = "Chưa có tín hiệu (Đang chờ hoặc đã ngắt kết nối)",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )

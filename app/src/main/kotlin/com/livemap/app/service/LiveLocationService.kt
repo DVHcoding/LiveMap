@@ -232,6 +232,7 @@ class LiveLocationService : Service() {
     }
 
     private fun stopLocationSharing() {
+        MqttManager.publishOfflineStatus()
         locationCallback?.let {
             fusedLocationClient.removeLocationUpdates(it)
             locationCallback = null

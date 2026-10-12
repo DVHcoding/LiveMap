@@ -38,19 +38,21 @@ fun SettingsDialog(
     currentUserId: String,
     currentMyName: String,
     currentPartnerName: String,
+    currentMapProvider: String,
     onDismiss: () -> Unit,
-    onSave: (pairCode: String, userId: String, myName: String, partnerName: String) -> Unit
+    onSave: (pairCode: String, userId: String, myName: String, partnerName: String, mapProvider: String) -> Unit
 ) {
     var pairCode by remember { mutableStateOf(currentPairCode) }
     var selectedUserId by remember { mutableStateOf(currentUserId) }
     var myName by remember { mutableStateOf(currentMyName) }
     var partnerName by remember { mutableStateOf(currentPartnerName) }
+    var selectedMapProvider by remember { mutableStateOf(currentMapProvider) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Cài đặt ghép đôi 2 người",
+                text = "Cài đặt ứng dụng",
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp
             )
@@ -63,10 +65,10 @@ fun SettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Chỉ cần 2 máy nhập cùng Mã ghép đôi và chọn 2 vai trò khác nhau (1 máy chọn Người A, 1 máy chọn Người B) là sẽ tự động thấy nhau.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    lineHeight = 18.sp
+                    text = "Nhập cùng Mã phòng và chọn 2 vai trò khác nhau (Người A & Người B) để xem vị trí của nhau.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    lineHeight = 16.sp
                 )
 
                 OutlinedTextField(
@@ -80,7 +82,7 @@ fun SettingsDialog(
                 Text(
                     text = "Thiết bị này là:",
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp
+                    fontSize = 13.sp
                 )
 
                 Row(
@@ -88,14 +90,30 @@ fun SettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilterChip(
+                        modifier = Modifier.weight(1f),
                         selected = selectedUserId == AppPreferences.DEFAULT_USER_A,
                         onClick = { selectedUserId = AppPreferences.DEFAULT_USER_A },
-                        label = { Text("Người A (Thiết bị 1)") }
+                        label = {
+                            Text(
+                                text = "Người A",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                fontSize = 13.sp
+                            )
+                        }
                     )
                     FilterChip(
+                        modifier = Modifier.weight(1f),
                         selected = selectedUserId == AppPreferences.DEFAULT_USER_B,
                         onClick = { selectedUserId = AppPreferences.DEFAULT_USER_B },
-                        label = { Text("Người B (Thiết bị 2)") }
+                        label = {
+                            Text(
+                                text = "Người B",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                fontSize = 13.sp
+                            )
+                        }
                     )
                 }
 
@@ -114,16 +132,54 @@ fun SettingsDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text(
+                    text = "Nguồn bản đồ:",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        modifier = Modifier.weight(1f),
+                        selected = selectedMapProvider == AppPreferences.MAP_PROVIDER_OSM,
+                        onClick = { selectedMapProvider = AppPreferences.MAP_PROVIDER_OSM },
+                        label = {
+                            Text(
+                                text = "Bản đồ OSM",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                fontSize = 13.sp
+                            )
+                        }
+                    )
+                    FilterChip(
+                        modifier = Modifier.weight(1f),
+                        selected = selectedMapProvider == AppPreferences.MAP_PROVIDER_GOOGLE,
+                        onClick = { selectedMapProvider = AppPreferences.MAP_PROVIDER_GOOGLE },
+                        label = {
+                            Text(
+                                text = "Google Maps",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                fontSize = 13.sp
+                            )
+                        }
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(pairCode, selectedUserId, myName, partnerName)
+                    onSave(pairCode, selectedUserId, myName, partnerName, selectedMapProvider)
                     onDismiss()
                 }
             ) {
-                Text("Lưu & Kết nối")
+                Text("Lưu cài đặt")
             }
         },
         dismissButton = {
