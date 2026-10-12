@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "live_map_prefs")
@@ -20,11 +21,15 @@ class AppPreferences(private val context: Context) {
         private val IS_SHARING_ACTIVE_KEY = booleanPreferencesKey("is_sharing_active")
         private val MAP_PROVIDER_KEY = stringPreferencesKey("map_provider")
 
-        const val DEFAULT_PAIR_CODE = "live_couple_8888"
         const val DEFAULT_USER_A = "USER_A"
         const val DEFAULT_USER_B = "USER_B"
         const val MAP_PROVIDER_OSM = "OSM"
         const val MAP_PROVIDER_GOOGLE = "GOOGLE"
+
+        fun generateRandomPairCode(): String {
+            val randomNum = (1000..9999).random()
+            return "LM-$randomNum"
+        }
     }
 
     val mapProviderFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -32,7 +37,18 @@ class AppPreferences(private val context: Context) {
     }
 
     val pairCodeFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[PAIR_CODE_KEY] ?: DEFAULT_PAIR_CODE
+        prefs[PAIR_CODE_KEY] ?: ""
+    }
+
+    suspend fun ensurePairCodeInitialized(): String {
+        val prefs = context.dataStore.data.first()
+        val existing = prefs[PAIR_CODE_KEY]
+        if (existing.isNullOrBlank() || existing == "live_couple_8888") {
+            val newCode = generateRandomPairCode()
+            savePairCode(newCode)
+            return newCode
+        }
+        return existing
     }
 
     val myUserIdFlow: Flow<String> = context.dataStore.data.map { prefs ->

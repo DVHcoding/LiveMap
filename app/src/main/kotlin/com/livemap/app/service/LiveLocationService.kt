@@ -78,7 +78,7 @@ class LiveLocationService : Service() {
 
     private var myUserId: String = AppPreferences.DEFAULT_USER_A
     private var myName: String = "Tôi"
-    private var pairCode: String = AppPreferences.DEFAULT_PAIR_CODE
+    private var pairCode: String = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -137,7 +137,7 @@ class LiveLocationService : Service() {
     private fun initAndStartTracking() {
         serviceScope.launch {
             val prefs = AppPreferences(applicationContext)
-            pairCode = prefs.pairCodeFlow.first()
+            pairCode = prefs.ensurePairCodeInitialized()
             myUserId = prefs.myUserIdFlow.first()
             myName = prefs.myNameFlow.first()
 

@@ -1,5 +1,9 @@
 package com.livemap.app.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,12 +12,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -27,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +52,7 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     onSave: (pairCode: String, userId: String, myName: String, partnerName: String, mapProvider: String) -> Unit
 ) {
+    val context = LocalContext.current
     var pairCode by remember { mutableStateOf(currentPairCode) }
     var selectedUserId by remember { mutableStateOf(currentUserId) }
     var myName by remember { mutableStateOf(currentMyName) }
@@ -62,7 +73,7 @@ fun SettingsDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = "Nhập cùng Mã phòng và chọn 2 vai trò khác nhau (Người A & Người B) để xem vị trí của nhau.",
@@ -73,11 +84,43 @@ fun SettingsDialog(
 
                 OutlinedTextField(
                     value = pairCode,
-                    onValueChange = { pairCode = it },
+                    onValueChange = { pairCode = it.trim().uppercase() },
                     label = { Text("Mã phòng / Mã bí mật") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            val newRandom = AppPreferences.generateRandomPairCode()
+                            pairCode = newRandom
+                            Toast.makeText(context, "Đã tạo mã phòng mới: $newRandom", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Tạo mã mới", fontSize = 12.sp)
+                    }
+
+                    TextButton(
+                        onClick = {
+                            if (pairCode.isNotBlank()) {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("LiveMap Room", pairCode))
+                                Toast.makeText(context, "Đã sao chép mã: $pairCode", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sao chép mã", fontSize = 12.sp)
+                    }
+                }
 
                 Text(
                     text = "Thiết bị này là:",

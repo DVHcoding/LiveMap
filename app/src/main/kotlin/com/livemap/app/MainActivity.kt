@@ -80,20 +80,23 @@ class MainActivity : ComponentActivity() {
                     val isMqttConnected by MqttManager.isConnected.collectAsState()
                     val isServiceRunning by LiveLocationService.isServiceRunning.collectAsState()
 
-                    val pairCode by appPreferences.pairCodeFlow.collectAsState(initial = AppPreferences.DEFAULT_PAIR_CODE)
+                    val pairCode by appPreferences.pairCodeFlow.collectAsState(initial = "")
                     val myUserId by appPreferences.myUserIdFlow.collectAsState(initial = AppPreferences.DEFAULT_USER_A)
                     val myName by appPreferences.myNameFlow.collectAsState(initial = "Tôi")
                     val partnerName by appPreferences.partnerNameFlow.collectAsState(initial = "Người ấy")
                     val mapProvider by appPreferences.mapProviderFlow.collectAsState(initial = AppPreferences.MAP_PROVIDER_OSM)
 
-                    // Tự động kết nối MQTT khi vào app để luôn nhận được vị trí đối phương
-                    LaunchedEffect(pairCode, myUserId) {
-                        MqttManager.connect(pairCode, myUserId)
+                    // Khởi tạo mã phòng ngẫu nhiên duy nhất nếu cài app lần đầu
+                    LaunchedEffect(Unit) {
+                        appPreferences.ensurePairCodeInitialized()
+                        checkAndRequestPermissions()
                     }
 
-                    // Tự động kiểm tra quyền và kích hoạt vị trí ngay khi mở app
-                    LaunchedEffect(Unit) {
-                        checkAndRequestPermissions()
+                    // Tự động kết nối MQTT khi vào app để luôn nhận được vị trí đối phương
+                    LaunchedEffect(pairCode, myUserId) {
+                        if (pairCode.isNotBlank()) {
+                            MqttManager.connect(pairCode, myUserId)
+                        }
                     }
 
                     MainScreen(
