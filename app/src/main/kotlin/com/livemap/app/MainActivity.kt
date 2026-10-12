@@ -86,16 +86,39 @@ class MainActivity : ComponentActivity() {
                     val partnerName by appPreferences.partnerNameFlow.collectAsState(initial = "Người ấy")
                     val mapProvider by appPreferences.mapProviderFlow.collectAsState(initial = AppPreferences.MAP_PROVIDER_OSM)
 
-                    // Khởi tạo mã phòng ngẫu nhiên duy nhất nếu cài app lần đầu
+                    var deviceId by remember { mutableStateOf("") }
+                    var lockedPartnerId by remember { mutableStateOf<String?>(null) }
+
+                    // Khởi tạo mã phòng & mã thiết bị duy nhất nếu cài app lần đầu
                     LaunchedEffect(Unit) {
                         appPreferences.ensurePairCodeInitialized()
+                        deviceId = appPreferences.getOrCreateDeviceId()
+                        lockedPartnerId = appPreferences.getLockedPartnerDeviceId()
                         checkAndRequestPermissions()
                     }
 
+                    // Lắng nghe sự kiện phòng đã đủ 2 người và bị từ chối kết nối
+                    LaunchedEffect(Unit) {
+                        MqttManager.roomFullEvent.collect { alertMessage ->
+                            Toast.makeText(this@MainActivity, alertMessage, Toast.LENGTH_LONG).show()
+                        }
+                    }
+
                     // Tự động kết nối MQTT khi vào app để luôn nhận được vị trí đối phương
-                    LaunchedEffect(pairCode, myUserId) {
-                        if (pairCode.isNotBlank()) {
-                            MqttManager.connect(pairCode, myUserId)
+                    LaunchedEffect(pairCode, myUserId, deviceId) {
+                        if (pairCode.isNotBlank() && deviceId.isNotBlank()) {
+                            MqttManager.connect(
+                                pairCode = pairCode,
+                                myUserId = myUserId,
+                                deviceId = deviceId,
+                                lockedPartnerId = lockedPartnerId,
+                                onUpdateLock = { newLock ->
+                                    lifecycleScope.launch {
+                                        appPreferences.saveLockedPartnerDeviceId(newLock)
+                                        lockedPartnerId = newLock
+                                    }
+                                }
+                            )
                         }
                     }
 
@@ -130,7 +153,18 @@ class MainActivity : ComponentActivity() {
                                 appPreferences.saveMapProvider(newProvider)
 
                                 MqttManager.disconnect()
-                                MqttManager.connect(newCode, newUserId)
+                                MqttManager.connect(
+                                    pairCode = newCode,
+                                    myUserId = newUserId,
+                                    deviceId = deviceId,
+                                    lockedPartnerId = null,
+                                    onUpdateLock = { newLock ->
+                                        lifecycleScope.launch {
+                                            appPreferences.saveLockedPartnerDeviceId(newLock)
+                                            lockedPartnerId = newLock
+                                        }
+                                    }
+                                )
 
                                 if (isServiceRunning) {
                                     LiveLocationService.stopService(this@MainActivity)

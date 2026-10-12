@@ -31,9 +31,12 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -250,6 +253,7 @@ private fun TopOverlayHeader(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var isCodeVisible by remember { mutableStateOf(false) }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -280,11 +284,24 @@ private fun TopOverlayHeader(
                         fontWeight = FontWeight.Bold,
                         color = if (isConnected) StatusGreen else StatusYellow
                     )
-                    Text(
-                        text = "Phòng: $pairCode",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { isCodeVisible = !isCodeVisible }
+                    ) {
+                        val maskedCode = if (pairCode.length > 3) "${pairCode.take(3)}••••" else "••••"
+                        Text(
+                            text = "Phòng: ${if (isCodeVisible) pairCode else maskedCode}",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = if (isCodeVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = "Ẩn/Hiện mã phòng",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
                 }
             }
 

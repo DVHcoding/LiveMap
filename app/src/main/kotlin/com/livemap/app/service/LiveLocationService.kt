@@ -79,6 +79,7 @@ class LiveLocationService : Service() {
     private var myUserId: String = AppPreferences.DEFAULT_USER_A
     private var myName: String = "Tôi"
     private var pairCode: String = ""
+    private var deviceId: String = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -140,8 +141,20 @@ class LiveLocationService : Service() {
             pairCode = prefs.ensurePairCodeInitialized()
             myUserId = prefs.myUserIdFlow.first()
             myName = prefs.myNameFlow.first()
+            deviceId = prefs.getOrCreateDeviceId()
+            val lockedPartnerId = prefs.getLockedPartnerDeviceId()
 
-            MqttManager.connect(pairCode, myUserId)
+            MqttManager.connect(
+                pairCode = pairCode,
+                myUserId = myUserId,
+                deviceId = deviceId,
+                lockedPartnerId = lockedPartnerId,
+                onUpdateLock = { newLock ->
+                    serviceScope.launch {
+                        prefs.saveLockedPartnerDeviceId(newLock)
+                    }
+                }
+            )
             startLocationUpdates()
         }
     }
@@ -175,7 +188,8 @@ class LiveLocationService : Service() {
             accuracy = if (loc.hasAccuracy()) loc.accuracy else 0f,
             batteryLevel = cachedBatteryInfo.level,
             isCharging = cachedBatteryInfo.isCharging,
-            timestamp = now
+            timestamp = now,
+            deviceId = deviceId
         )
 
         _myLocationFlow.value = locationData
