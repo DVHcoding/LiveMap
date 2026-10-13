@@ -51,6 +51,7 @@
             android:name=".service.LiveLocationService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="location" />
 
     </application>
