@@ -19,11 +19,23 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.livemap.app.data.model.LocationData
 import com.livemap.app.utils.OrientationSensorHelper
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+
+private val OSM_FRANCE = XYTileSource(
+    "OsmFrance",
+    0, 20, 256, ".png",
+    arrayOf(
+        "https://a.tile.openstreetmap.fr/osmfr/",
+        "https://b.tile.openstreetmap.fr/osmfr/",
+        "https://c.tile.openstreetmap.fr/osmfr/"
+    ),
+    "© OpenStreetMap contributors"
+)
 
 
 
@@ -134,7 +146,7 @@ fun OsmMapView(
             }
 
             val mapView = MapView(ctx).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
+                setTileSource(OSM_FRANCE)
                 setMultiTouchControls(true)
                 zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                 minZoomLevel = 4.0

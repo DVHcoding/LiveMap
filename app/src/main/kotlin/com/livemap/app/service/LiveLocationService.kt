@@ -1,6 +1,7 @@
 package com.livemap.app.service
 
 import android.annotation.SuppressLint
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,6 +14,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -113,9 +115,18 @@ class LiveLocationService : Service() {
                 return START_STICKY
             }
             else -> {
-                stopLocationSharing()
-                stopSelf()
-                return START_NOT_STICKY
+                serviceScope.launch {
+                    val prefs = AppPreferences(applicationContext)
+                    val isSharingActive = prefs.isSharingActiveFlow.first()
+                    if (isSharingActive || _isServiceRunning.value) {
+                        startForegroundWithNotification()
+                        initAndStartTracking()
+                    } else {
+                        stopLocationSharing()
+                        stopSelf()
+                    }
+                }
+                return START_STICKY
             }
         }
     }
@@ -132,6 +143,9 @@ class LiveLocationService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         _isServiceRunning.value = true
+        serviceScope.launch {
+            AppPreferences(applicationContext).saveSharingActive(true)
+        }
     }
 
     private var lastBatteryCheckTime: Long = 0L
@@ -245,6 +259,9 @@ class LiveLocationService : Service() {
 
     private fun stopLocationSharing() {
         _isServiceRunning.value = false
+        serviceScope.launch {
+            AppPreferences(applicationContext).saveSharingActive(false)
+        }
         locationCallback?.let {
             fusedLocationClient.removeLocationUpdates(it)
             locationCallback = null
@@ -300,14 +317,45 @@ class LiveLocationService : Service() {
         }
     }
 
+    private fun scheduleServiceRevival() {
+        try {
+            val restartIntent = Intent(applicationContext, LiveLocationService::class.java).apply {
+                action = ACTION_START
+                setPackage(packageName)
+            }
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_ONE_SHOT
+            }
+            val pendingIntent = PendingIntent.getService(applicationContext, 9992, restartIntent, flags)
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarmManager?.set(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + 1000L,
+                pendingIntent
+            )
+            Log.d(TAG, "Guardian scheduled LiveLocationService revival via AlarmManager")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to schedule revival: ${e.message}")
+        }
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Khi người dùng vuốt/gạt đóng app khỏi đa nhiệm (Recents), 
-        // Foreground Service vẫn giữ nguyên và tiếp tục stream vị trí ngầm
-        Log.d(TAG, "App swiped away from Recents, Foreground Service continues running in background")
+        super.onTaskRemoved(rootIntent)
+        Log.d(TAG, "App swiped away from Recents: Guardian ensuring service continues")
+        if (_isServiceRunning.value) {
+            scheduleServiceRevival()
+        }
     }
 
     override fun onDestroy() {
-        stopLocationSharing()
+        if (_isServiceRunning.value) {
+            Log.w(TAG, "Service destroyed unexpectedly by OS while active! Scheduling revival...")
+            scheduleServiceRevival()
+        } else {
+            stopLocationSharing()
+        }
         super.onDestroy()
     }
 }
