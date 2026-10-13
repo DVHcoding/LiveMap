@@ -77,6 +77,7 @@ fun MainScreen(
     myLocation: LocationData?,
     partnerLocation: LocationData?,
     isMqttConnected: Boolean,
+    isRoomFullRejected: Boolean = false,
     isServiceRunning: Boolean,
     pairCode: String,
     myUserId: String,
@@ -115,6 +116,7 @@ fun MainScreen(
         TopOverlayHeader(
             pairCode = pairCode,
             isConnected = isMqttConnected,
+            isRoomFullRejected = isRoomFullRejected,
             onOpenSettings = { showSettingsDialog = true },
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -249,6 +251,7 @@ fun MainScreen(
 private fun TopOverlayHeader(
     pairCode: String,
     isConnected: Boolean,
+    isRoomFullRejected: Boolean = false,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -270,19 +273,35 @@ private fun TopOverlayHeader(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val statusDotColor = when {
+                    isRoomFullRejected -> StatusRed
+                    isConnected -> StatusGreen
+                    else -> StatusYellow
+                }
+                val statusTextColor = when {
+                    isRoomFullRejected -> StatusRed
+                    isConnected -> StatusGreen
+                    else -> StatusYellow
+                }
+                val statusText = when {
+                    isRoomFullRejected -> "Phòng đã đủ 2 người (Bị từ chối)"
+                    isConnected -> "Đã kết nối Realtime"
+                    else -> "Đang kết nối lại..."
+                }
+
                 Box(
                     modifier = Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (isConnected) StatusGreen else StatusRed)
+                        .background(statusDotColor)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = if (isConnected) "Đã kết nối Realtime" else "Đang kết nối lại...",
+                        text = statusText,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isConnected) StatusGreen else StatusYellow
+                        color = statusTextColor
                     )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

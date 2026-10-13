@@ -100,6 +100,14 @@ class LiveLocationService : Service() {
         ).apply {
             setReferenceCounted(false)
         }
+
+        serviceScope.launch {
+            MqttManager.roomFullEvent.collect {
+                Log.w(TAG, "Room full received while service running. Stopping service immediately.")
+                stopLocationSharing()
+                stopSelf()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -164,7 +172,8 @@ class LiveLocationService : Service() {
             MqttManager.connect(
                 pairCode = pairCode,
                 myUserId = myUserId,
-                deviceId = deviceId
+                deviceId = deviceId,
+                myName = myName
             )
             startLocationUpdates()
         }

@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
                     val myLocation by LiveLocationService.myLocationFlow.collectAsState()
                     val partnerLocation by MqttManager.partnerLocation.collectAsState(initial = null)
                     val isMqttConnected by MqttManager.isConnected.collectAsState()
+                    val isRoomFullRejected by MqttManager.isRoomFullRejected.collectAsState()
                     val isServiceRunning by LiveLocationService.isServiceRunning.collectAsState()
 
                     val pairCode by appPreferences.pairCodeFlow.collectAsState(initial = "")
@@ -98,17 +99,18 @@ class MainActivity : ComponentActivity() {
                     // Lắng nghe sự kiện phòng đã đủ 2 người và bị từ chối kết nối
                     LaunchedEffect(Unit) {
                         MqttManager.roomFullEvent.collect { alertMessage ->
-                            Toast.makeText(this@MainActivity, alertMessage, Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, alertMessage, Toast.LENGTH_SHORT).show()
                         }
                     }
 
                     // Tự động kết nối MQTT khi vào app để luôn nhận được vị trí đối phương
-                    LaunchedEffect(pairCode, myUserId, deviceId) {
+                    LaunchedEffect(pairCode, myUserId, deviceId, myName) {
                         if (pairCode.isNotBlank() && deviceId.isNotBlank()) {
                             MqttManager.connect(
                                 pairCode = pairCode,
                                 myUserId = myUserId,
-                                deviceId = deviceId
+                                deviceId = deviceId,
+                                myName = myName
                             )
                         }
                     }
@@ -117,6 +119,7 @@ class MainActivity : ComponentActivity() {
                         myLocation = myLocation,
                         partnerLocation = partnerLocation,
                         isMqttConnected = isMqttConnected,
+                        isRoomFullRejected = isRoomFullRejected,
                         isServiceRunning = isServiceRunning,
                         pairCode = pairCode,
                         myUserId = myUserId,
@@ -142,13 +145,6 @@ class MainActivity : ComponentActivity() {
                                 appPreferences.saveMyName(newMyName)
                                 appPreferences.savePartnerName(newPartnerName)
                                 appPreferences.saveMapProvider(newProvider)
-
-                                MqttManager.disconnect()
-                                MqttManager.connect(
-                                    pairCode = newCode,
-                                    myUserId = newUserId,
-                                    deviceId = deviceId
-                                )
 
                                 if (isServiceRunning) {
                                     LiveLocationService.stopService(this@MainActivity)
