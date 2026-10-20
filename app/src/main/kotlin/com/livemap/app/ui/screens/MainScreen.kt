@@ -25,6 +25,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Layers
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import com.livemap.app.utils.LocationShareUtils
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -433,27 +435,48 @@ private fun BottomDashboard(
                     }
                 }
 
-                // Thông tin Pin đối phương
+                // Thông tin Pin đối phương & nút copy tọa độ
                 partnerLocation?.let { loc ->
+                    val context = LocalContext.current
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = if (loc.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
-                            contentDescription = "Pin",
-                            tint = if (loc.batteryLevel <= 20) StatusRed else StatusGreen,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "${loc.batteryLevel}%",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        IconButton(
+                            onClick = {
+                                LocationShareUtils.copyCoordinates(
+                                    context, loc.latitude, loc.longitude, partnerName
+                                )
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Sao chép tọa độ Google Maps",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (loc.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                contentDescription = "Pin",
+                                tint = if (loc.batteryLevel <= 20) StatusRed else StatusGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${loc.batteryLevel}%",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

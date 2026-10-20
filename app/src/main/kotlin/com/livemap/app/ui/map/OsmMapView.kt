@@ -17,6 +17,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.livemap.app.data.model.LocationData
+import com.livemap.app.utils.LocationShareUtils
 import com.livemap.app.utils.OrientationSensorHelper
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
@@ -179,6 +180,12 @@ fun OsmMapView(
                         rotation = -myLocation.bearing
                     }
                 }
+                setOnMarkerClickListener { marker, _ ->
+                    val pos = marker.position
+                    LocationShareUtils.copyCoordinates(ctx, pos.latitude, pos.longitude, myName)
+                    marker.showInfoWindow()
+                    true
+                }
             }
 
             // Kích hoạt xoay bản đồ 360 độ 2 ngón tay siêu mượt (Smooth 60fps/120fps, không lag)
@@ -197,6 +204,12 @@ fun OsmMapView(
                     if (partnerLocation.bearing != 0f) {
                         rotation = -partnerLocation.bearing
                     }
+                }
+                setOnMarkerClickListener { marker, _ ->
+                    val pos = marker.position
+                    LocationShareUtils.copyCoordinates(ctx, pos.latitude, pos.longitude, partnerName)
+                    marker.showInfoWindow()
+                    true
                 }
             }
             mapView.overlays.add(partnerMarker)

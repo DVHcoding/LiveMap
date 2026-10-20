@@ -31,6 +31,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.livemap.app.data.model.LocationData
+import com.livemap.app.utils.LocationShareUtils
 import com.livemap.app.utils.OrientationSensorHelper
 import kotlinx.coroutines.launch
 
@@ -279,7 +280,12 @@ fun GoogleMapView(
             icon = myIconDescriptor,
             anchor = Offset(0.5f, 0.5f),
             flat = true,
-            rotation = myMarkerRotation
+            rotation = myMarkerRotation,
+            onClick = {
+                val pos = myMarkerState.position
+                LocationShareUtils.copyCoordinates(context, pos.latitude, pos.longitude, myName)
+                false
+            }
         )
 
         // Marker của Đối phương (nếu có vị trí)
@@ -290,7 +296,12 @@ fun GoogleMapView(
                 icon = partnerIconDescriptor,
                 anchor = Offset(0.5f, 0.5f),
                 flat = true,
-                rotation = partnerMarkerRotation
+                rotation = partnerMarkerRotation,
+                onClick = {
+                    val pos = partnerMarkerState.position
+                    LocationShareUtils.copyCoordinates(context, pos.latitude, pos.longitude, partnerName)
+                    false
+                }
             )
         }
     }
