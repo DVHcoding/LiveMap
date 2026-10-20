@@ -371,7 +371,7 @@ class LiveLocationService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("LiveMap — Vị trí trực tiếp")
+            .setContentTitle("LiveMap")
             .setContentText(contentText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
