@@ -31,6 +31,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberMarkerState
 import com.livemap.app.data.model.LocationData
+import com.livemap.app.utils.LocationShareUtils
 import com.livemap.app.utils.OrientationSensorHelper
 import kotlinx.coroutines.launch
 
@@ -212,20 +213,32 @@ fun GoogleMapView(
         val target = LatLng(loc.latitude, loc.longitude)
         val start = partnerCurrentLatLng ?: target
         val now = System.currentTimeMillis()
-        val duration = if (lastPartnerTime[0] > 0L) (now - lastPartnerTime[0]).coerceIn(200L, 2500L) else 1000L
+        val timeDelta = if (lastPartnerTime[0] > 0L) (now - lastPartnerTime[0]) else 1000L
         lastPartnerTime[0] = now
+        // Thêm buffer 350ms để marker tiếp tục lướt mượt mà, không bao giờ bị dừng sớm gây khựng trước khi gói tin tiếp theo tới
+        val duration = (timeDelta + 350L).coerceIn(1000L, 3000L)
 
         val isMoving = loc.speed >= 0.5f && loc.bearing != 0f
-        if (isMoving) {
-            partnerMarkerRotation = loc.bearing
-        }
+        val startRotation = partnerMarkerRotation
+        var rotDiff = if (isMoving) (loc.bearing - startRotation) % 360f else 0f
+        if (rotDiff > 180f) rotDiff -= 360f
+        if (rotDiff < -180f) rotDiff += 360f
 
-        val partnerDeltaLat = kotlin.math.abs(target.latitude - start.latitude)
-        val partnerDeltaLng = kotlin.math.abs(target.longitude - start.longitude)
-        if (partnerDeltaLat > 0.005 || partnerDeltaLng > 0.005) {
+        val distanceResults = FloatArray(1)
+        android.location.Location.distanceBetween(
+            start.latitude, start.longitude,
+            target.latitude, target.longitude,
+            distanceResults
+        )
+        val distanceMeters = distanceResults[0]
+
+        // Nếu khoảng cách nhảy vọt xa (> 70m) hoặc thời gian ngắt kết nối quá lâu (> 8s):
+        // Đặt thẳng vị trí (snap) ngay lập tức, triệt tiêu hoàn toàn hiện tượng marker phóng vụt qua màn hình
+        if (distanceMeters > 70f || timeDelta > 8000L) {
             partnerAnimator?.cancel()
             partnerCurrentLatLng = target
             partnerMarkerState.position = target
+            if (isMoving) partnerMarkerRotation = loc.bearing
             return@LaunchedEffect
         }
 
@@ -240,6 +253,10 @@ fun GoogleMapView(
                 val interpolated = LatLng(lat, lng)
                 partnerCurrentLatLng = interpolated
                 partnerMarkerState.position = interpolated
+
+                if (isMoving && rotDiff != 0f) {
+                    partnerMarkerRotation = (startRotation + rotDiff * fraction + 360f) % 360f
+                }
             }
             start()
         }
@@ -279,7 +296,12 @@ fun GoogleMapView(
             icon = myIconDescriptor,
             anchor = Offset(0.5f, 0.5f),
             flat = true,
-            rotation = myMarkerRotation
+            rotation = myMarkerRotation,
+            onClick = {
+                val pos = myMarkerState.position
+                LocationShareUtils.copyCoordinates(context, pos.latitude, pos.longitude, myName)
+                false
+            }
         )
 
         // Marker của Đối phương (nếu có vị trí)
@@ -290,7 +312,12 @@ fun GoogleMapView(
                 icon = partnerIconDescriptor,
                 anchor = Offset(0.5f, 0.5f),
                 flat = true,
-                rotation = partnerMarkerRotation
+                rotation = partnerMarkerRotation,
+                onClick = {
+                    val pos = partnerMarkerState.position
+                    LocationShareUtils.copyCoordinates(context, pos.latitude, pos.longitude, partnerName)
+                    false
+                }
             )
         }
     }

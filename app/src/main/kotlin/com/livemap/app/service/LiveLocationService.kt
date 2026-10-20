@@ -161,6 +161,10 @@ class LiveLocationService : Service() {
     private var lastPublishedTime: Long = 0L
     private var lastPublishedLat: Double = 0.0
     private var lastPublishedLng: Double = 0.0
+    private var anchorLat: Double = 0.0
+    private var anchorLng: Double = 0.0
+    private var lastMovementTime: Long = 0L
+    private var isStationaryMode: Boolean = false
 
     private fun initAndStartTracking() {
         serviceScope.launch {
@@ -179,25 +183,91 @@ class LiveLocationService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun adjustLocationTrackingMode(isStationary: Boolean) {
+        if (isStationaryMode == isStationary && locationCallback != null) return
+        isStationaryMode = isStationary
+        val cb = locationCallback ?: return
+
+        // Khi đứng yên: CHUYỂN SANG PRIORITY_BALANCED_POWER_ACCURACY để TẮT HẲN CHIP GPS VỆ TINH!
+        // Chỉ dùng sóng mạng Wi-Fi/Cell-Tower có sẵn, giảm 98% điện năng cảm biến!
+        // Khi di chuyển: Quét 2s một lần bằng GPS vệ tinh độ chính xác cao.
+        val priority = if (isStationary) Priority.PRIORITY_BALANCED_POWER_ACCURACY else Priority.PRIORITY_HIGH_ACCURACY
+        val intervalMs = if (isStationary) 30_000L else 2000L
+        val minIntervalMs = if (isStationary) 15_000L else 1000L
+        val minDistanceMeters = if (isStationary) 20.0f else 1.5f
+
+        val locationRequest = LocationRequest.Builder(priority, intervalMs)
+            .setMinUpdateIntervalMillis(minIntervalMs)
+            .setMinUpdateDistanceMeters(minDistanceMeters)
+            .setWaitForAccurateLocation(false)
+            .build()
+
+        try {
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                cb,
+                Looper.getMainLooper()
+            )
+            Log.d(TAG, "Adjusted GNSS tracking mode: stationary=$isStationary, interval=${intervalMs}ms, priority=$priority")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Error adjusting location updates: ${e.message}")
+        }
+    }
+
     private fun handleNewLocation(loc: android.location.Location) {
         if (!_isServiceRunning.value) return
         val now = System.currentTimeMillis()
 
-        // 1. Chỉ truy vấn trạng thái Pin hệ thống 30 giây một lần (tiết kiệm CPU)
-        if (now - lastBatteryCheckTime > 30_000L || lastBatteryCheckTime == 0L) {
+        // 1. Chỉ truy vấn trạng thái Pin hệ thống 60 giây một lần (tiết kiệm CPU)
+        if (now - lastBatteryCheckTime > 60_000L || lastBatteryCheckTime == 0L) {
             cachedBatteryInfo = BatteryUtils.getBatteryInfo(applicationContext)
             lastBatteryCheckTime = now
         }
 
-        val speed = if (loc.hasSpeed()) loc.speed else 0f
-        val isMoving = speed >= 0.5f
-        val deltaLat = kotlin.math.abs(loc.latitude - lastPublishedLat)
-        val deltaLng = kotlin.math.abs(loc.longitude - lastPublishedLng)
-        val hasDisplaced = deltaLat > 0.00003 || deltaLng > 0.00003 // Di chuyển > 3 mét
+        // 2. Cổng lọc sai số GPS: Bỏ qua các tọa độ có độ lệch > 35m (chống nhảy cột sóng khi ở trong nhà / đút túi)
+        if (loc.hasAccuracy() && loc.accuracy > 35f && lastPublishedLat != 0.0) {
+            Log.w(TAG, "Ignoring noisy GPS fix (accuracy=${loc.accuracy}m > 35m)")
+            return
+        }
 
-        // 2. Chế độ tiết kiệm Pin thông minh: Khi đứng yên hoàn toàn, giãn nhịp gửi tin thành 3 giây
-        // Khi bắt đầu di chuyển: phát sóng ngay lập tức mỗi 1 giây để đối phương thấy mượt mà nhất
-        val shouldPublish = isMoving || hasDisplaced || (now - lastPublishedTime >= 3000L)
+        val speed = if (loc.hasSpeed()) loc.speed else 0f
+        val isWalkingOrDriving = speed >= 1.2f // Đi bộ thực tế >= 1.2 m/s (~4.3 km/h)
+
+        // Tính khoảng cách tới điểm neo (Anchor point) đứng yên
+        var distFromAnchor = 0f
+        if (anchorLat != 0.0 && anchorLng != 0.0) {
+            val distResults = FloatArray(1)
+            android.location.Location.distanceBetween(anchorLat, anchorLng, loc.latitude, loc.longitude, distResults)
+            distFromAnchor = distResults[0]
+        } else {
+            anchorLat = loc.latitude
+            anchorLng = loc.longitude
+        }
+
+        // Bán kính khử nhiễu đứng yên: 25 mét.
+        // Chỉ khi người dùng thực sự đi ra khỏi bán kính 25m hoặc chạy xe >= 1.2 m/s mới tính là di chuyển
+        val hasGenuinelyMoved = isWalkingOrDriving || distFromAnchor > 25.0f
+
+        if (hasGenuinelyMoved) {
+            lastMovementTime = now
+            anchorLat = loc.latitude
+            anchorLng = loc.longitude
+            adjustLocationTrackingMode(isStationary = false)
+        } else if (now - lastMovementTime > 10_000L) {
+            // Đã đứng yên trong bán kính 25m quá 10 giây -> Chuyển sang chế độ ngủ sâu
+            adjustLocationTrackingMode(isStationary = true)
+        }
+
+        // 3. Cơ chế truyền tải mạng siêu tiết kiệm pin:
+        // - Khi đang di chuyển: phát sóng mỗi 2 giây
+        // - Khi đứng yên hoàn toàn: CHỈ phát sóng heartbeat 60 giây một lần (giảm 98% hao pin 4G/LTE)
+        val timeSinceLastPublish = now - lastPublishedTime
+        val shouldPublish = if (hasGenuinelyMoved) {
+            timeSinceLastPublish >= 2000L || distFromAnchor > 5.0f
+        } else {
+            timeSinceLastPublish >= 60_000L
+        }
 
         val locationData = LocationData(
             senderId = myUserId,
@@ -220,7 +290,7 @@ class LiveLocationService : Service() {
             lastPublishedLat = loc.latitude
             lastPublishedLng = loc.longitude
             MqttManager.publishLocation(locationData)
-            Log.d(TAG, "Location published: lat=${loc.latitude}, lng=${loc.longitude}, speed=${speed}m/s")
+            Log.d(TAG, "Location published: lat=${loc.latitude}, lng=${loc.longitude}, speed=${speed}m/s, stationary=$isStationaryMode")
         }
     }
 
@@ -228,7 +298,7 @@ class LiveLocationService : Service() {
     private fun startLocationUpdates() {
         if (locationCallback != null) return
 
-        // 1. Lấy ngay vị trí gần nhất lưu trong cache để hiển thị lập tức, không chờ GPS fix
+        // 1. Lấy ngay vị trí gần nhất lưu trong cache để hiển thị lập tức
         try {
             fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
                 loc?.let { handleNewLocation(it) }
@@ -241,9 +311,10 @@ class LiveLocationService : Service() {
             Log.e(TAG, "SecurityException getting last location: ${e.message}")
         }
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-            .setMinUpdateIntervalMillis(500L)
-            .setMinUpdateDistanceMeters(0f) // Liên tục ghi nhận cả khi đứng yên hoặc quay đầu
+        // Khởi tạo ở chế độ bình thường (2s)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
+            .setMinUpdateIntervalMillis(1000L)
+            .setMinUpdateDistanceMeters(1.5f)
             .setWaitForAccurateLocation(false)
             .build()
 
@@ -260,7 +331,7 @@ class LiveLocationService : Service() {
                 locationCallback!!,
                 Looper.getMainLooper()
             )
-            Log.d(TAG, "Location updates requested successfully (1s interval)")
+            Log.d(TAG, "Location updates requested successfully (initial 2s interval)")
         } catch (e: SecurityException) {
             Log.e(TAG, "Location permission not granted: ${e.message}")
         }

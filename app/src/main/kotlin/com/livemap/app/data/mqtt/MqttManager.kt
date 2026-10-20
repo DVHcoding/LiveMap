@@ -64,6 +64,8 @@ object MqttManager {
     val partnerLocation: StateFlow<LocationData?> = _partnerLocation.asStateFlow()
 
     private var lastReceivedTimestamp: Long = 0L
+    private var lastPartnerLocationTimestamp: Long = 0L
+    private var lastPublishedLocationTimestamp: Long = 0L
     private var offlineCheckerJob: Job? = null
     private var presenceJob: Job? = null
 
@@ -75,17 +77,17 @@ object MqttManager {
         offlineCheckerJob?.cancel()
         offlineCheckerJob = scope.launch {
             while (isActive) {
-                delay(2000L)
+                delay(3000L)
                 val current = _partnerLocation.value
                 val now = System.currentTimeMillis()
-                // 1. Quá 15s không có GPS update -> ẩn marker vị trí đối phương
-                if (current != null && now - lastReceivedTimestamp > 15_000L) {
-                    Log.d(TAG, "Partner GPS timeout (>15s). Hiding partner marker.")
+                // 1. Quá 60s mất hoàn toàn tín hiệu từ partner -> mới ẩn marker vị trí
+                if (current != null && now - lastReceivedTimestamp > 60_000L) {
+                    Log.d(TAG, "Partner timeout (>60s without signal). Hiding partner marker.")
                     _partnerLocation.value = null
                 }
-                // 2. Quá 35s mất hoàn toàn cả Heartbeat lẫn GPS -> coi như ngắt mạng hẳn, giải phóng slot
-                if (lockedPartnerDeviceId != null && lastReceivedTimestamp > 0L && now - lastReceivedTimestamp > 35_000L) {
-                    Log.d(TAG, "Partner total connection timeout (>35s). Releasing partner slot.")
+                // 2. Quá 90s mất hoàn toàn cả Heartbeat lẫn GPS -> giải phóng slot
+                if (lockedPartnerDeviceId != null && lastReceivedTimestamp > 0L && now - lastReceivedTimestamp > 90_000L) {
+                    Log.d(TAG, "Partner total connection timeout (>90s). Releasing partner slot.")
                     clearPartnerLocation()
                 }
             }
@@ -96,10 +98,14 @@ object MqttManager {
         presenceJob?.cancel()
         presenceJob = scope.launch {
             while (isActive) {
-                delay(4000L)
+                delay(45_000L) // Giãn nhịp lên 45s (tiết kiệm modem 4G/CPU tối đa)
                 val pairCode = currentPairCode
+                val now = System.currentTimeMillis()
+                // Chỉ gửi PING nếu không có gói tin vị trí nào được gửi trong 40 giây qua
                 if (client?.isConnected == true && pairCode != null && kickedFromRoom != pairCode) {
-                    sendPresencePing(targetDevId = lockedPartnerDeviceId)
+                    if (now - lastPublishedLocationTimestamp >= 40_000L) {
+                        sendPresencePing(targetDevId = lockedPartnerDeviceId)
+                    }
                 }
             }
         }
@@ -136,6 +142,7 @@ object MqttManager {
         lockedPartnerDeviceId = null
         isPairConfirmed = false
         lastReceivedTimestamp = 0L
+        lastPartnerLocationTimestamp = 0L
     }
 
     fun publishOfflineStatus() {
@@ -336,12 +343,47 @@ object MqttManager {
 
                             // 6. Xử lý dữ liệu từ partner hợp lệ
                             if (senderDevId == lockedPartnerDeviceId) {
-                                lastReceivedTimestamp = System.currentTimeMillis()
+                                val now = System.currentTimeMillis()
+                                lastReceivedTimestamp = now
                                 if (data.targetDeviceId == currentDeviceId) {
                                     isPairConfirmed = true
                                 }
                                 if (data.status == "ACTIVE") {
-                                    Log.d(TAG, "Partner location arrived: lat=${data.latitude}, lng=${data.longitude}, speed=${data.speed}")
+                                    // A. CHỐNG GÓI TIN ĐẾN LỆCH THỨ TỰ (Stale / Out-of-order Packet Filter)
+                                    // Bỏ qua gói tin cũ hơn gói tin mới nhất đã nhận để chống giật lùi vị trí
+                                    if (data.timestamp < lastPartnerLocationTimestamp) {
+                                        Log.w(TAG, "Ignoring stale out-of-order packet (ts=${data.timestamp} < last=$lastPartnerLocationTimestamp)")
+                                        return
+                                    }
+
+                                    // B. CỔNG LỌC ĐỘ CHÍNH XÁC GPS (Accuracy Gatekeeper)
+                                    // Nếu sai số > 40m và đã có vị trí chuẩn trước đó -> lờ đi chống nhảy cột sóng
+                                    val prevLoc = _partnerLocation.value
+                                    if (data.accuracy > 40f && prevLoc != null) {
+                                        Log.w(TAG, "Ignoring noisy GPS fix from partner (accuracy=${data.accuracy}m > 40m)")
+                                        return
+                                    }
+
+                                    // C. CHỐNG DỊCH CHUYỂN TỨC THỜI / VẬN TỐC PHI LÝ (Anti-Teleport / Velocity Sanity Check)
+                                    if (prevLoc != null && prevLoc.latitude != 0.0 && prevLoc.longitude != 0.0) {
+                                        val dist = FloatArray(1)
+                                        android.location.Location.distanceBetween(
+                                            prevLoc.latitude, prevLoc.longitude,
+                                            data.latitude, data.longitude,
+                                            dist
+                                        )
+                                        val distanceMeters = dist[0]
+                                        val timeDeltaSec = (data.timestamp - lastPartnerLocationTimestamp).coerceAtLeast(200L) / 1000f
+                                        val impliedSpeedMs = distanceMeters / timeDeltaSec
+                                        // Vận tốc vượt quá 45 m/s (162 km/h) và khoảng cách nhảy > 50m -> nhiễu GPS (glitch)
+                                        if (impliedSpeedMs > 45f && distanceMeters > 50f) {
+                                            Log.w(TAG, "Ignoring teleport glitch: dist=${distanceMeters}m in ${timeDeltaSec}s (${impliedSpeedMs * 3.6f} km/h)")
+                                            return
+                                        }
+                                    }
+
+                                    lastPartnerLocationTimestamp = data.timestamp
+                                    Log.d(TAG, "Partner location accepted: lat=${data.latitude}, lng=${data.longitude}, speed=${data.speed}")
                                     _partnerLocation.value = data
                                 }
                             }
@@ -416,6 +458,7 @@ object MqttManager {
         }
 
         try {
+            lastPublishedLocationTimestamp = System.currentTimeMillis()
             val dataToSend = data.copy(
                 deviceId = if (data.deviceId.isBlank()) currentDeviceId else data.deviceId,
                 targetDeviceId = data.targetDeviceId ?: lockedPartnerDeviceId

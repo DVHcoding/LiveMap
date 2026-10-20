@@ -1,7 +1,7 @@
 import mqtt from "mqtt";
 
 const BROKER_URL = "mqtt://broker.emqx.io:1883";
-const PAIR_CODE = "live_couple_8888";
+const PAIR_CODE = process.argv[2] || "OK";
 const TOPIC = `livemap/pair/${PAIR_CODE}/location`;
 
 // Xuất phát từ vị trí thực tế của bạn (Hoàng Tăng Bí) -> Đích đến: Nhà hát Lớn Hà Nội (Tràng Tiền)
@@ -111,66 +111,96 @@ for (let step = 0; step < totalPoints; step++) {
 
 console.log(`✨ Đã tạo ${waypoints.length} điểm mốc di chuyển liên tục, bám sát tâm đường 100%!`);
 
-// 6. Kết nối MQTT và phát sóng định vị thời gian thực
+// 6. Kết nối MQTT và phát sóng định vị thời gian thực với vật lý và mạng chập chờn y như thật
 const client = mqtt.connect(BROKER_URL, {
     clientId: `Simulated_Partner_HN_${Math.random().toString(36).substring(7)}`,
     clean: true,
     connectTimeout: 10000,
 });
 
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 let currentIndex = 0;
 let battery = 92;
 let movingForward = true;
+let currentSpeed = 10.0; // m/s (36 km/h)
+let cycleCount = 0;
 
-client.on("connect", () => {
+client.on("connect", async () => {
     console.log("✅ Đã kết nối EMQX MQTT!");
-    console.log(`🚗 Bắt đầu phát sóng Người ấy di chuyển dọc đường phố đến Nhà hát Lớn Hà Nội...\n`);
+    console.log(`🚗 BẮT ĐẦU MÔ PHỎNG LƯỚT SIÊU MƯỢT (1.0s/lần, vận tốc biến thiên tự nhiên)...\n`);
 
-    setInterval(() => {
-        if (waypoints.length === 0) return;
-
+    while (true) {
+        cycleCount++;
         const wp = waypoints[currentIndex];
+        const nextWp = waypoints[Math.min(currentIndex + 1, waypoints.length - 1)];
 
-        // Hao pin thực tế theo thời gian
-        if (currentIndex % 60 === 0 && battery > 10) {
+        // 1. Tính toán góc cua để điều chỉnh vận tốc tự nhiên
+        let angleDiff = Math.abs(nextWp.bearing - wp.bearing);
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+
+        // Vận tốc biến thiên mềm mại:
+        if (angleDiff > 25) {
+            // Khúc cua gắt -> hạ tốc độ nhẹ xuống 18 - 22 km/h
+            currentSpeed = 5.5;
+        } else if (cycleCount % 20 < 10) {
+            // Tăng tốc trên đường thẳng: 40 - 48 km/h
+            currentSpeed = 12.0;
+        } else {
+            // Tốc độ bình thường: 32 - 36 km/h
+            currentSpeed = 9.5;
+        }
+
+        // Hao pin nhẹ
+        if (cycleCount % 60 === 0 && battery > 10) {
             battery -= 1;
         }
 
         const payload = {
             senderId: "USER_B",
-            senderName: "Người ấy",
+            senderName: "Người ấy (Mô Phỏng)",
             latitude: wp.lat,
             longitude: wp.lng,
             bearing: Math.round(wp.bearing * 10) / 10,
-            speed: wp.speed,
-            accuracy: 1.5,
+            speed: Math.round(currentSpeed * 10) / 10,
+            accuracy: 2.0,
             batteryLevel: battery,
             isCharging: false,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            status: "ACTIVE",
+            deviceId: "DEV_SIMULATOR_B"
         };
 
         client.publish(TOPIC, JSON.stringify(payload), { qos: 0 });
 
-        if (currentIndex % 4 === 0) {
-            const speedKmh = (wp.speed * 3.6).toFixed(1);
-            console.log(
-                `[🎭 ĐANG TRÊN ĐƯỜNG ĐẾN NHÀ HÁT LỚN] Bước ${currentIndex + 1}/${waypoints.length} | Tọa độ: ${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)} | Hướng: ${wp.bearing.toFixed(0)}° | Tốc độ: ${speedKmh} km/h`
-            );
-        }
+        const speedKmh = (currentSpeed * 3.6).toFixed(1);
+        console.log(
+            `[🚗 LƯỚT MƯỢT] Bước ${currentIndex + 1}/${waypoints.length} | Tốc độ: ${speedKmh} km/h | Góc lái: ${wp.bearing.toFixed(0)}° | Tọa độ: ${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}`
+        );
 
-        // Tự động quay đầu nếu đi hết lộ trình (15km)
+        // Tiến về phía trước theo vận tốc thực tế (STEP_METERS = 5m)
+        const stepAdvance = Math.max(1, Math.round((currentSpeed * 1.0) / STEP_METERS));
         if (movingForward) {
-            currentIndex++;
+            currentIndex += stepAdvance;
             if (currentIndex >= waypoints.length - 1) {
+                currentIndex = waypoints.length - 1;
                 movingForward = false;
+                console.log("🏁 ĐÃ ĐẾN NHÀ HÁT LỚN HÀ NỘI! Bắt đầu quay đầu về lại...");
             }
         } else {
-            currentIndex--;
+            currentIndex -= stepAdvance;
             if (currentIndex <= 0) {
+                currentIndex = 0;
                 movingForward = true;
+                console.log("🏁 ĐÃ VỀ LẠI HOÀNG TĂNG BÍ! Bắt đầu hành trình mới...");
             }
         }
-    }, INTERVAL_MS);
+
+        // Nhịp phát sóng chuẩn xác 1000ms đều đặn
+        await sleep(1000);
+    }
 });
 
 client.on("error", (err) => {

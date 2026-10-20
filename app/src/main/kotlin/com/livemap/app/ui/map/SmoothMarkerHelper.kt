@@ -1,6 +1,7 @@
 package com.livemap.app.ui.map
 
 import android.animation.ValueAnimator
+import android.location.Location
 import android.view.animation.LinearInterpolator
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -53,10 +54,16 @@ class SmoothMarkerHelper(private val mapView: MapView) {
         val startLat = marker.position.latitude
         val startLng = marker.position.longitude
 
-        // Nếu khoảng cách nhảy vọt quá xa (> 500m): đặt thẳng vị trí
-        val deltaLat = targetGeoPoint.latitude - startLat
-        val deltaLng = targetGeoPoint.longitude - startLng
-        if (kotlin.math.abs(deltaLat) > 0.005 || kotlin.math.abs(deltaLng) > 0.005) {
+        // Nếu khoảng cách nhảy vọt quá xa (> 70m): đặt thẳng vị trí (snap) thay vì phóng vụt qua màn hình
+        val distanceResults = FloatArray(1)
+        Location.distanceBetween(
+            startLat, startLng,
+            targetGeoPoint.latitude, targetGeoPoint.longitude,
+            distanceResults
+        )
+        val distanceMeters = distanceResults[0]
+
+        if (distanceMeters > 70f) {
             currentAnimator?.cancel()
             currentAnimator = null
             lastTargetLat = targetGeoPoint.latitude
@@ -82,8 +89,9 @@ class SmoothMarkerHelper(private val mapView: MapView) {
 
         currentAnimator?.cancel()
 
-        // Thêm buffer 50ms để triệt tiêu hiện tượng khựng trước khi gói tin tiếp theo tới
-        val effectiveDuration = (durationMs + 50L).coerceIn(150L, 5000L)
+        // Thêm buffer 350ms để triệt tiêu hiện tượng khựng trước khi gói tin tiếp theo tới;
+        // Marker luôn duy trì chuyển động liên tục, không bao giờ dừng sớm chờ mạng
+        val effectiveDuration = (durationMs + 350L).coerceIn(1000L, 3000L)
 
         currentAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = effectiveDuration

@@ -17,6 +17,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.livemap.app.data.model.LocationData
+import com.livemap.app.utils.LocationShareUtils
 import com.livemap.app.utils.OrientationSensorHelper
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.tileprovider.tilesource.XYTileSource
@@ -179,6 +180,12 @@ fun OsmMapView(
                         rotation = -myLocation.bearing
                     }
                 }
+                setOnMarkerClickListener { marker, _ ->
+                    val pos = marker.position
+                    LocationShareUtils.copyCoordinates(ctx, pos.latitude, pos.longitude, myName)
+                    marker.showInfoWindow()
+                    true
+                }
             }
 
             // Kích hoạt xoay bản đồ 360 độ 2 ngón tay siêu mượt (Smooth 60fps/120fps, không lag)
@@ -197,6 +204,12 @@ fun OsmMapView(
                     if (partnerLocation.bearing != 0f) {
                         rotation = -partnerLocation.bearing
                     }
+                }
+                setOnMarkerClickListener { marker, _ ->
+                    val pos = marker.position
+                    LocationShareUtils.copyCoordinates(ctx, pos.latitude, pos.longitude, partnerName)
+                    marker.showInfoWindow()
+                    true
                 }
             }
             mapView.overlays.add(partnerMarker)
@@ -246,7 +259,7 @@ fun OsmMapView(
         val loc = partnerLocation
         val now = System.currentTimeMillis()
         val duration = if (lastPartnerTime[0] > 0L) {
-            (now - lastPartnerTime[0]).coerceIn(200L, 2500L)
+            (now - lastPartnerTime[0]).coerceIn(800L, 2500L)
         } else 1000L
         lastPartnerTime[0] = now
 
@@ -267,7 +280,7 @@ fun OsmMapView(
         val holder = mapHolder ?: return@LaunchedEffect
         val now = System.currentTimeMillis()
         val duration = if (lastMyTime[0] > 0L) {
-            (now - lastMyTime[0]).coerceIn(200L, 2500L)
+            (now - lastMyTime[0]).coerceIn(800L, 2500L)
         } else 1000L
         lastMyTime[0] = now
 
