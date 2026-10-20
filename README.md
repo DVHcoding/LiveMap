@@ -1,43 +1,127 @@
-# LiveMap — Ứng Dụng Chia Sẻ Vị Trí Thời Gian Thực (Chạy Ngầm Siêu Mượt Cho 2 Người)
+# LiveMap
 
-Ứng dụng Android viết bằng **Kotlin + Jetpack Compose**, chuyên biệt để **2 người** chia sẻ vị trí trực tiếp cho nhau giống như Zalo, nhưng khắc phục triệt để nhược điểm giật lag/delay nhờ cơ chế **True Realtime & Nội suy chuyển động mượt mà (Smooth Interpolation)**.
+### Real-time location sharing for two Android devices.
 
----
+LiveMap is an Android app built with Kotlin and Jetpack Compose that lets two people follow each other's location on a map, with background updates, smooth marker interpolation, and device status information.
 
-## 🌟 Tính Năng Nổi Bật
-
-1. **Chạy ngầm liên tục (Foreground Service + WakeLock)**:
-   - Dù bạn đóng app, vuốt bỏ khỏi đa nhiệm (Recents), hay khóa màn hình đút túi quần, GPS vẫn được stream ngầm liên tục theo thời gian thực (1 giây/lần).
-   - Có thông báo trạng thái cố định trên thanh Notification giúp hệ điều hành Android (kể cả Android 14+) không bị hệ thống tự ý tắt (Doze mode).
-2. **Chuyển động lướt mượt mà 60fps (Không bị dịch chuyển giật cục như Zalo)**:
-   - Áp dụng thuật toán **Smooth Marker Interpolation**: Khi nhận tọa độ mới, Marker sẽ lướt nhẹ nhàng từ điểm cũ sang điểm mới theo đường ngắn nhất trong 1000ms.
-   - Xoay hướng xe/người mượt mà theo góc di chuyển (Bearing).
-3. **Độ trễ siêu thấp (<100ms) qua MQTT Realtime**:
-   - Truyền nhận gói tin siêu nhẹ (JSON ~100 bytes) qua giao thức MQTT bảo mật, không cần cài server riêng, không tốn pin/băng thông.
-4. **Bản đồ OsmDroid (OpenStreetMap)**:
-   - Hoàn toàn miễn phí, hiển thị đường phố chi tiết tại Việt Nam và toàn cầu.
-   - Không yêu cầu API Key hay liên kết thẻ tín dụng như Google Maps SDK.
-5. **Hiển thị thông tin đối phương chi tiết**:
-   - Tốc độ di chuyển theo km/h.
-   - % Pin và trạng thái đang sạc của đối phương.
-   - Nút căn chỉnh nhanh: **Tâm điểm Tôi**, **Tâm điểm Người ấy**, **Xem cả 2 người cùng lúc**.
+[Quick start](#quick-start) · [Features](#features) · [Development setup](#development-setup) · [Architecture](#architecture) · [Privacy](#privacy)
 
 ---
 
-## 🚀 Hướng Dẫn Sử Dụng Cho 2 Người
+## Features
 
-1. **Cài đặt APK lên 2 điện thoại**:
-   - File APK debug đã được build sẵn tại:
-     `app/build/outputs/apk/debug/app-debug.apk`
-2. **Khởi động & Cấp quyền**:
-   - Mở ứng dụng, cấp quyền **Vị trí (Khi dùng ứng dụng / Luôn cho phép)** và quyền **Thông báo**.
-   - Bỏ giới hạn tối ưu pin khi hệ điều hành hỏi để ứng dụng chạy ngầm không bị tắt.
-3. **Ghép đôi 2 máy**:
-   - Bấm vào biểu tượng **Cài đặt (Bánh răng)** ở góc trên bên phải:
-     - **Mã phòng / Mã bí mật**: Cả 2 máy nhập cùng 1 mã (mặc định: `live_couple_8888` hoặc bạn có thể đổi thành mã riêng của 2 bạn).
-     - **Máy 1**: Chọn `Người A (Thiết bị 1)` và đặt tên (ví dụ: `Anh`).
-     - **Máy 2**: Chọn `Người B (Thiết bị 2)` và đặt tên (ví dụ: `Em`).
-     - Bấm **Lưu & Kết nối**.
-4. **Bật chia sẻ**:
-   - Bấm nút **"BẬT CHIA SẺ CHẠY NGẦM"** ở bảng điều khiển phía dưới.
-   - Bây giờ 2 bạn có thể tắt màn hình hoặc đóng app, vị trí của 2 người sẽ luôn được đồng bộ mượt mà!
+- **Live sharing for two people** — pair devices with a room code; each room accepts one device pair.
+- **Background location updates** — a foreground service keeps sending locations while the app is not on screen, with the notification Android requires.
+- **Smooth map movement** — markers interpolate between updates and rotate to match the direction of travel.
+- **Two map providers** — OpenStreetMap is the default, with optional Google Maps support after configuring an API key.
+- **Useful status information** — view speed, battery level, charging status, and copy coordinates.
+- **Quick controls** — focus the map on your location, your partner's location, or both devices.
+
+## Quick start
+
+### Install the debug APK
+
+Connect an Android device over USB or start an emulator, then run:
+
+```bash
+./gradlew installDebug
+```
+
+After installation, grant location and notification permissions. To keep sharing reliable while the screen is off, allow the app to run in the background when Android asks.
+
+### Pair two devices
+
+1. Open **Settings** on both devices.
+2. Use the same **room code**; you can generate a random code and copy it to send to the other person.
+3. Select different roles: **User A** on one device and **User B** on the other.
+4. Enter display names, save the settings, and enable location sharing.
+
+## Development setup
+
+### Requirements
+
+- Android Studio or JDK 17.
+- Android SDK with `compileSdk 34`.
+- An Android device or emulator with Google Play services for location updates.
+
+### Clone and build
+
+```bash
+git clone https://github.com/DVHcoding/LiveMap.git
+cd LiveMap
+./gradlew assembleDebug
+```
+
+The APK is created at `app/build/outputs/apk/debug/app-debug.apk`.
+
+### Configure Google Maps (optional)
+
+OpenStreetMap works without an API key. To use Google Maps, add your key to `local.properties` at the project root:
+
+```properties
+MAPS_API_KEY=your_google_maps_api_key
+```
+
+`local.properties` is ignored by Git; never commit API keys.
+
+## Architecture
+
+```text
+Fused Location Provider
+        │
+        ▼
+LiveLocationService ── MQTT ── EMQX public broker
+        │                            │
+        ├── Foreground notification  └── Partner device
+        ▼
+Jetpack Compose UI
+        │
+        ├── OpenStreetMap / osmdroid
+        └── Google Maps Compose (optional)
+```
+
+| Component | Responsibility |
+| --- | --- |
+| `LiveLocationService` | Obtains locations, maintains the foreground service, and publishes location data. |
+| `MqttManager` | Connects to MQTT, synchronizes state, and limits rooms to two devices. |
+| `AppPreferences` | Stores room code, display names, roles, device identity, and map preference. |
+| Compose UI | Renders the map, markers, dashboard, and settings. |
+
+## App permissions
+
+| Permission | Why it is needed |
+| --- | --- |
+| Precise and background location | Sends location while sharing is enabled, including when the app is not on screen. |
+| Foreground service | Keeps background location sharing running as required by Android. |
+| Notifications | Shows the active location-sharing service status. |
+| Internet and network state | Connects to MQTT and loads map data. |
+| Wake lock / battery optimization | Reduces the risk of the sharing session being stopped by battery-saving modes. |
+
+## Privacy
+
+LiveMap publishes location data over MQTT to a topic derived from the room code. Only share a room code with people you trust, and stop sharing when it is no longer needed.
+
+The project currently uses a public MQTT broker over a `tcp` connection. A room code is not a substitute for authentication or end-to-end encryption. Do not use the default configuration for sensitive data or production deployments; use your own broker with TLS, authentication, and topic-level access controls instead.
+
+## Operational notes
+
+- The location update frequency changes with movement to balance smoothness and battery use.
+- Some Android vendors apply aggressive battery optimization; allow LiveMap to run unrestricted if background updates become unreliable.
+- Google Maps requires a valid API key and may incur charges under Google Maps Platform policies.
+
+## Technology
+
+- Kotlin, Coroutines, and Jetpack Compose
+- Android Foreground Service and Fused Location Provider
+- Eclipse Paho MQTT
+- osmdroid / OpenStreetMap
+- Google Maps SDK and Maps Compose
+- DataStore Preferences
+
+## Contributing
+
+Open an issue to report a bug or propose an improvement. For pull requests, clearly describe the change and verify the debug build before submitting:
+
+```bash
+./gradlew assembleDebug
+```
